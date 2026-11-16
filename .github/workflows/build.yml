@@ -39,9 +39,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # 6. Собираем релизный APK
+            # 6. Собираем релизный APK
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --android-skip-build-dependency-validation
+
 
       # 7. Загружаем собранный APK в артефакты GitHub Actions
       - name: Upload APK Artifact
