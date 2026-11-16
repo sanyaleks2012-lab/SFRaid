@@ -1,0 +1,51 @@
+name: Build Flutter APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Настраиваем Java (необходима для сборки Android-приложений)
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. Настраиваем и скачиваем Flutter SDK
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v3
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+
+      # 4. Проверяем версию Flutter
+      - name: Check Flutter version
+        run: flutter --version
+
+      # 5. Устанавливаем зависимости проекта
+      - name: Install dependencies
+        run: flutter pub get
+
+      # 6. Собираем релизный APK
+      - name: Build APK
+        run: flutter build apk --release
+
+      # 7. Загружаем собранный APK в артефакты GitHub Actions
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
