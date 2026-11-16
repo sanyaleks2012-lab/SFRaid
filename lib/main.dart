@@ -1,14 +1,3 @@
-// SF2 Raid Forge — Flutter (Android), весь код в одном файле.
-//
-// pubspec.yaml -> dependencies:
-//   xml: ^6.5.0
-//   permission_handler: ^11.3.1
-//
-// AndroidManifest.xml (внутри <manifest>):
-//   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
-//   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-//   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -16,35 +5,82 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:xml/xml.dart';
 import 'package:file_picker/file_picker.dart';
 
+// ============================================================
+// STORAGE
+// ============================================================
+
+Future<bool> requestStoragePermission() async {
+  if (!Platform.isAndroid) return true;
+
+  try {
+    var status = await Permission.manageExternalStorage.status;
+
+    if (status.isGranted) return true;
+
+    status = await Permission.manageExternalStorage.request();
+
+    return status.isGranted;
+  } catch (_) {
+    return false;
+  }
+}
 
 // ============================================================
 // CONFIG / PRESETS
 // ============================================================
 
 const int maxUndo = 30;
-const String defaultFilePath = '/storage/emulated/0/raid_stages_default.xml';
+
+const String defaultFilePath =
+    '/storage/emulated/0/raid_stages_default.xml';
 
 const Map<String, (String, String, Map<String, String>)> presetPerks = {
-  '1': ('OVERHEAT', 'PERK_ITEM_SPECIAL_OVERHEAT_WEAPON', {'Aspect': '100000', 'Frames': '300'}),
-  '2': ('BLEEDING', 'PERK_ITEM_SPECIAL_BLEEDING_WEAPON', {'Aspect': '100000'}),
-  '3': ('DAMAGE ABSORPTION', 'PERK_ITEM_SPECIAL_DAMAGE_ABSORBPTION_BODY_ARMOR', {'Aspect': '100000', 'Chance': '0.2'}),
+  '1': ('OVERHEAT', 'PERK_ITEM_SPECIAL_OVERHEAT_WEAPON', {
+    'Aspect': '100000',
+    'Frames': '300'
+  }),
+  '2': ('BLEEDING', 'PERK_ITEM_SPECIAL_BLEEDING_WEAPON', {
+    'Aspect': '100000'
+  }),
+  '3': ('DAMAGE ABSORPTION',
+      'PERK_ITEM_SPECIAL_DAMAGE_ABSORBPTION_BODY_ARMOR', {
+    'Aspect': '100000',
+    'Chance': '0.2'
+  }),
   '4': ('INVISIBILITY', 'PERK_INVISIBILITY', {'Frames': '600'}),
   '5': ('BLOCK BREAKER', 'PERK_BLOCK_BREAKER', {'Chance': '0.33'}),
-  '6': ('PAIN RAGE', 'PERK_PAIN_RAGE', {'Chance': '0.25', 'DamageFactor': '3000'}),
-  '7': ('PLOT TWIST', 'PERK_PLOT_TWIST', {'Chance': '1.0', 'Type': 'CopyMagic'}),
+  '6': ('PAIN RAGE', 'PERK_PAIN_RAGE', {
+    'Chance': '0.25',
+    'DamageFactor': '3000'
+  }),
+  '7': ('PLOT TWIST', 'PERK_PLOT_TWIST', {
+    'Chance': '1.0',
+    'Type': 'CopyMagic'
+  }),
   '8': ('SOUL TYPHOON', 'PERK_SOUL_TYPHOON', {'Aspect': '100000'}),
   '9': ('TIME SHIFT', 'PERK_TIME_SHIFT', {'Frames': '300'}),
-  '10': ('CRIMSON CORRUPTION', 'PERK_CRIMSON_CORRUPTION', {'Aspect': '100000'}),
+  '10': ('CRIMSON CORRUPTION', 'PERK_CRIMSON_CORRUPTION', {
+    'Aspect': '100000'
+  }),
   '11': ('ROARING LIGHT', 'PERK_ROARING_LIGHT', {'Aspect': '100000'}),
 };
 
 const Map<String, (String, String, String, Map<String, String>)> presetRules = {
-  '1': ('HOT GROUND', 'HOT_GROUND', 'HotGround', {'Frames': '720', 'ApplyTo': 'Player'}),
+  '1': ('HOT GROUND', 'HOT_GROUND', 'HotGround', {
+    'Frames': '720',
+    'ApplyTo': 'Player'
+  }),
   '2': ('INVERTED JOYSTICK', 'INVERTED_JOYSTICK', 'InvertJoystick', {}),
   '3': ('NO HEALTH BAR', 'NO_HEALTHBAR', 'NoHealthBar', {}),
   '4': ('NO JUMPS', 'NO_JUMPS', 'NoAnimation', {'Name': 'Jump'}),
-  '5': ('NO KICKS', 'NO_KICKS', 'NoButton', {'Name': 'Kick', 'ApplyTo': 'Player'}),
-  '6': ('NO BLOCKS', 'NO_BLOCKS', 'RemoveInterval', {'Type': 'Block', 'ApplyTo': 'Player'}),
+  '5': ('NO KICKS', 'NO_KICKS', 'NoButton', {
+    'Name': 'Kick',
+    'ApplyTo': 'Player'
+  }),
+  '6': ('NO BLOCKS', 'NO_BLOCKS', 'RemoveInterval', {
+    'Type': 'Block',
+    'ApplyTo': 'Player'
+  }),
 };
 
 const Set<String> removableRuleTags = {
@@ -60,32 +96,53 @@ const Set<String> removableRuleTags = {
 // XML HELPERS
 // ============================================================
 
+extension FirstOrNullExtension<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+}
+
 class RaidForgeException implements Exception {
   final String message;
+
   RaidForgeException(this.message);
+
   @override
   String toString() => message;
 }
 
-XmlElement makeEl(String tag, [Map<String, String> attrs = const {}]) {
+XmlElement makeEl(
+  String tag, [
+  Map<String, String> attrs = const {},
+]) {
   return XmlElement(
     XmlName(tag),
-    attrs.entries.map((e) => XmlAttribute(XmlName(e.key), e.value)),
+    attrs.entries.map(
+      (e) => XmlAttribute(XmlName(e.key), e.value),
+    ),
   );
 }
 
 extension RaidXml on XmlElement {
-  String attr(String name, [String def = '']) => getAttribute(name) ?? def;
+  String attr(String name, [String def = '']) =>
+      getAttribute(name) ?? def;
+
   Iterable<XmlElement> kids(String tag) => findElements(tag);
+
   XmlElement? kid(String tag) => findElements(tag).firstOrNull;
+
   XmlElement? deep(String tag) => findAllElements(tag).firstOrNull;
+
   void put(String name, String value) => setAttribute(name, value);
+
   Map<String, String> get attrMap => {
         for (final a in attributes) a.name.local: a.value,
       };
 }
 
 typedef BattleRef = (XmlElement zone, XmlElement battle);
+
+// ============================================================
+// STATISTICS
+// ============================================================
 
 class Stats {
   int zones = 0,
@@ -103,31 +160,40 @@ class DiagnosticsResult {
   final List<String> errors;
   final List<String> warnings;
   final Stats stats;
+
   DiagnosticsResult(this.errors, this.warnings, this.stats);
 }
 
 // ============================================================
-// CONTROLLER (вся логика)
+// CONTROLLER
 // ============================================================
 
 class RaidForgeController extends ChangeNotifier {
   String filePath;
+
   late XmlDocument _doc;
+
   final List<XmlDocument> _undoStack = [];
+
   bool dirty = false;
 
   RaidForgeController(this.filePath);
 
   XmlElement get root => _doc.rootElement;
+
   int get undoCount => _undoStack.length;
 
-  // ---------- load / save / undo ----------
+  // ----------------------------------------------------------
+  // LOAD
+  // ----------------------------------------------------------
 
   Future<void> load() async {
     final file = File(filePath);
+
     if (!await file.exists()) {
       throw RaidForgeException('Файл не найден:\n$filePath');
     }
+
     try {
       _doc = XmlDocument.parse(await file.readAsString());
     } on XmlException catch (e) {
@@ -135,107 +201,171 @@ class RaidForgeController extends ChangeNotifier {
     } catch (e) {
       throw RaidForgeException('Ошибка чтения:\n$e');
     }
+
     _undoStack.clear();
     dirty = false;
+
     notifyListeners();
   }
 
+  // ----------------------------------------------------------
+  // UNDO
+  // ----------------------------------------------------------
+
   void _snapshot() {
     _undoStack.add(_doc.copy());
-    if (_undoStack.length > maxUndo) _undoStack.removeAt(0);
+
+    if (_undoStack.length > maxUndo) {
+      _undoStack.removeAt(0);
+    }
   }
 
   void _mutate(void Function() action) {
     _snapshot();
+
     action();
+
     dirty = true;
+
     notifyListeners();
   }
 
   bool undo() {
     if (_undoStack.isEmpty) return false;
+
     _doc = _undoStack.removeLast();
+
     dirty = true;
+
     notifyListeners();
+
     return true;
   }
 
   String _two(int n) => n.toString().padLeft(2, '0');
 
+  // ----------------------------------------------------------
+  // SAVE
+  // ----------------------------------------------------------
+
   Future<String?> save() async {
     if (!dirty) return null;
 
     final n = DateTime.now();
+
     final ts = '${n.year}${_two(n.month)}${_two(n.day)}_'
         '${_two(n.hour)}${_two(n.minute)}${_two(n.second)}';
+
     final backup = '$filePath.$ts.bak';
 
     final src = File(filePath);
+
+    if (!await src.exists()) {
+      throw RaidForgeException('Исходный файл больше не существует.');
+    }
+
     await src.copy(backup);
 
-    final xml = _doc.toXmlString(pretty: true, indent: '  ');
+    final xml = _doc.toXmlString(
+      pretty: true,
+      indent: '  ',
+    );
+
     final out = xml.trimLeft().startsWith('<?xml')
         ? xml
         : '<?xml version="1.0" encoding="utf-8"?>\n$xml';
 
-    final tmp = File('${src.parent.path}/.raidforge_${n.microsecondsSinceEpoch}.xml');
+    final tmp = File(
+      '${src.parent.path}/.raidforge_${n.microsecondsSinceEpoch}.xml',
+    );
+
     try {
       await tmp.writeAsString(out, flush: true);
+
       await tmp.rename(filePath);
     } catch (e) {
-      if (await tmp.exists()) await tmp.delete();
+      if (await tmp.exists()) {
+        await tmp.delete();
+      }
+
       rethrow;
     }
 
     dirty = false;
+
     notifyListeners();
+
     return backup;
   }
 
-  // ---------- tree ----------
+  // ----------------------------------------------------------
+  // TREE
+  // ----------------------------------------------------------
 
   List<XmlElement> zones() {
     final node = root.kid('Zones');
-    if (node != null) return node.kids('Zone').toList();
+
+    if (node != null) {
+      return node.kids('Zone').toList();
+    }
+
     return root.findAllElements('Zone').toList();
   }
 
   List<BattleRef> battles() {
     final result = <BattleRef>[];
+
     for (final z in zones()) {
       for (final b in z.kids('Battle')) {
         result.add((z, b));
       }
     }
+
     return result;
   }
 
-  XmlElement? getWarrior(XmlElement battle) => battle.deep('Warrior');
-  XmlElement? getFight(XmlElement battle) => battle.deep('Fight');
-  XmlElement? getRules(XmlElement battle) => getFight(battle)?.kid('Rules');
+  XmlElement? getWarrior(XmlElement battle) =>
+      battle.deep('Warrior');
 
-  // ---------- statistics ----------
+  XmlElement? getFight(XmlElement battle) =>
+      battle.deep('Fight');
+
+  XmlElement? getRules(XmlElement battle) =>
+      getFight(battle)?.kid('Rules');
+
+  // ----------------------------------------------------------
+  // STATISTICS
+  // ----------------------------------------------------------
 
   Stats statistics() {
     final s = Stats();
+
     final zs = zones();
+
     s.zones = zs.length;
+
     for (final zone in zs) {
       for (final battle in zone.kids('Battle')) {
         s.battles++;
+
         final warriors = battle.findAllElements('Warrior').toList();
+
         s.warriors += warriors.length;
+
         for (final w in warriors) {
           for (final perks in w.kids('Perks')) {
             s.warriorPerks += perks.kids('Perk').length;
           }
         }
+
         for (final rules in battle.findAllElements('Rules')) {
           s.complexRules += rules.kids('ComplexRule').length;
           s.equipItems += rules.kids('EquipItem').length;
           s.rulePerks += rules.kids('Perk').length;
         }
+
         s.currencies += battle.findAllElements('Currency').length;
+
         for (final rwc in battle.findAllElements('RulesWithConditions')) {
           for (final c in rwc.kids('Conditions')) {
             s.conditions += c.childElements.length;
@@ -243,60 +373,112 @@ class RaidForgeController extends ChangeNotifier {
         }
       }
     }
+
     return s;
   }
 
-  // ---------- zones ----------
+  // ----------------------------------------------------------
+  // ZONES
+  // ----------------------------------------------------------
 
   void createZone(String name, String fileName) {
     _mutate(() {
       var zonesNode = root.kid('Zones');
+
       if (zonesNode == null) {
         zonesNode = makeEl('Zones');
         root.children.add(zonesNode);
       }
-      zonesNode.children.add(makeEl('Zone', {'Name': name, 'FileName': fileName}));
+
+      zonesNode.children.add(
+        makeEl('Zone', {
+          'Name': name,
+          'FileName': fileName,
+        }),
+      );
     });
   }
 
-  void editZone(XmlElement zone, String name, String fileName) {
-    if (name == zone.attr('Name') && fileName == zone.attr('FileName')) return;
+  void editZone(
+    XmlElement zone,
+    String name,
+    String fileName,
+  ) {
+    if (name == zone.attr('Name') &&
+        fileName == zone.attr('FileName')) {
+      return;
+    }
+
     _mutate(() {
       zone.put('Name', name);
       zone.put('FileName', fileName);
     });
   }
 
-  void deleteZone(XmlElement zone) => _mutate(() => zone.remove());
+  void deleteZone(XmlElement zone) {
+    _mutate(() => zone.remove());
+  }
 
-  // ---------- battles ----------
+  // ----------------------------------------------------------
+  // BATTLES
+  // ----------------------------------------------------------
 
-  void deleteBattle(XmlElement battle) => _mutate(() => battle.remove());
+  void deleteBattle(XmlElement battle) {
+    _mutate(() => battle.remove());
+  }
 
-  void duplicateBattle(XmlElement zone, XmlElement battle, [String? newName]) {
+  void duplicateBattle(
+    XmlElement zone,
+    XmlElement battle, [
+    String? newName,
+  ]) {
     _mutate(() {
       final clone = battle.copy();
+
       final old = clone.attr('Name', 'BOSS');
-      clone.put('Name', (newName == null || newName.isEmpty) ? '${old}_COPY' : newName);
+
+      clone.put(
+        'Name',
+        (newName == null || newName.isEmpty)
+            ? '${old}_COPY'
+            : newName,
+      );
+
       zone.children.add(clone);
     });
   }
 
-  void cloneBattleToZone(XmlElement template, XmlElement targetZone, [String? newName]) {
+  void cloneBattleToZone(
+    XmlElement template,
+    XmlElement targetZone, [
+    String? newName,
+  ]) {
     _mutate(() {
       final clone = template.copy();
+
       final cur = clone.attr('Name', 'BOSS');
-      clone.put('Name', (newName == null || newName.isEmpty) ? '${cur}_COPY' : newName);
+
+      clone.put(
+        'Name',
+        (newName == null || newName.isEmpty)
+            ? '${cur}_COPY'
+            : newName,
+      );
+
       targetZone.children.add(clone);
     });
   }
 
   List<BattleRef> searchBosses(String query) {
     final q = query.toLowerCase();
+
     if (q.isEmpty) return [];
+
     final matches = <BattleRef>[];
+
     for (final (zone, battle) in battles()) {
       final warrior = getWarrior(battle);
+
       final values = <String>[
         battle.attr('Name'),
         battle.attr('Alias'),
@@ -305,106 +487,196 @@ class RaidForgeController extends ChangeNotifier {
         if (warrior != null) warrior.attr('Template'),
         if (warrior != null) warrior.attr('Tactic'),
       ];
+
       if (values.any((v) => v.toLowerCase().contains(q))) {
         matches.add((zone, battle));
       }
     }
+
     return matches;
   }
 
-  // ---------- boss simple edits ----------
+  // ----------------------------------------------------------
+  // BOSS EDITS
+  // ----------------------------------------------------------
 
-  void editBossIdentity(XmlElement battle, String name, String title) {
-    if (name == battle.attr('Name') && title == battle.attr('Title')) return;
+  void editBossIdentity(
+    XmlElement battle,
+    String name,
+    String title,
+  ) {
+    if (name == battle.attr('Name') &&
+        title == battle.attr('Title')) {
+      return;
+    }
+
     _mutate(() {
       battle.put('Name', name);
       battle.put('Title', title);
     });
   }
 
-  void editPowerShields(XmlElement warrior, String power, String shields) {
+  void editPowerShields(
+    XmlElement warrior,
+    String power,
+    String shields,
+  ) {
     if (power == warrior.attr('WarriorPower', '0') &&
-        shields == warrior.attr('ShieldTotal', '0')) return;
+        shields == warrior.attr('ShieldTotal', '0')) {
+      return;
+    }
+
     _mutate(() {
       warrior.put('WarriorPower', power);
       warrior.put('ShieldTotal', shields);
     });
   }
 
-  void editRounds(XmlElement fight, String rounds, String roundTime) {
+  void editRounds(
+    XmlElement fight,
+    String rounds,
+    String roundTime,
+  ) {
     if (rounds == fight.attr('Rounds', '0') &&
-        roundTime == fight.attr('RoundTime', '999')) return;
+        roundTime == fight.attr('RoundTime', '999')) {
+      return;
+    }
+
     _mutate(() {
       fight.put('Rounds', rounds);
       fight.put('RoundTime', roundTime);
     });
   }
 
-  // ---------- generic attributes ----------
+  // ----------------------------------------------------------
+  // GENERIC ATTRIBUTES
+  // ----------------------------------------------------------
 
-  void setAttr(XmlElement el, String key, String value) => _mutate(() => el.put(key, value));
+  void setAttr(
+    XmlElement el,
+    String key,
+    String value,
+  ) {
+    _mutate(() => el.put(key, value));
+  }
 
-  void changeAttr(XmlElement el, String key, String value) {
+  void changeAttr(
+    XmlElement el,
+    String key,
+    String value,
+  ) {
     if (value == el.attr(key)) return;
+
     setAttr(el, key, value);
   }
 
-  void removeAttr(XmlElement el, String key) => _mutate(() => el.removeAttribute(key));
+  void removeAttr(XmlElement el, String key) {
+    _mutate(() => el.removeAttribute(key));
+  }
 
-  XmlElement addChild(XmlElement parent, String tag, [Map<String, String> attrs = const {}]) {
+  XmlElement addChild(
+    XmlElement parent,
+    String tag, [
+    Map<String, String> attrs = const {},
+  ]) {
     final child = makeEl(tag, attrs);
+
     _mutate(() => parent.children.add(child));
+
     return child;
   }
 
-  void removeChild(XmlElement child) => _mutate(() => child.remove());
+  void removeChild(XmlElement child) {
+    _mutate(() => child.remove());
+  }
 
-  // ---------- perks ----------
+  // ----------------------------------------------------------
+  // PERKS
+  // ----------------------------------------------------------
 
   XmlElement ensurePerks(XmlElement warrior) {
     var perks = warrior.kid('Perks');
+
     if (perks == null) {
       perks = makeEl('Perks');
+
       final p = perks;
+
       _mutate(() => warrior.children.add(p));
     }
+
     return perks;
   }
 
-  void addPresetPerk(XmlElement perksNode, String presetKey) {
+  void addPresetPerk(
+    XmlElement perksNode,
+    String presetKey,
+  ) {
     final preset = presetPerks[presetKey];
+
     if (preset == null) return;
+
     final (_, name, attrs) = preset;
+
     _mutate(() {
       final perk = makeEl('Perk', {'Name': name});
-      if (attrs.isNotEmpty) perk.children.add(makeEl('Set', attrs));
+
+      if (attrs.isNotEmpty) {
+        perk.children.add(makeEl('Set', attrs));
+      }
+
       perksNode.children.add(perk);
     });
   }
 
-  void addCustomPerk(XmlElement parent, String name,
-      {Map<String, String>? setAttrs, String? applyTo}) {
+  void addCustomPerk(
+    XmlElement parent,
+    String name, {
+    Map<String, String>? setAttrs,
+    String? applyTo,
+  }) {
     _mutate(() {
       final perk = makeEl('Perk', {
         'Name': name,
         if (applyTo != null) 'ApplyTo': applyTo,
       });
-      if (setAttrs != null) perk.children.add(makeEl('Set', setAttrs));
+
+      if (setAttrs != null) {
+        perk.children.add(makeEl('Set', setAttrs));
+      }
+
       parent.children.add(perk);
     });
   }
 
-  void editPerk(XmlElement perk, {String? name, String? applyTo}) {
-    final nameChanged = name != null && name.isNotEmpty && name != perk.attr('Name');
-    final applyChanged = applyTo != null && applyTo != perk.attr('ApplyTo');
+  void editPerk(
+    XmlElement perk, {
+    String? name,
+    String? applyTo,
+  }) {
+    final newName = name;
+
+    final newApplyTo = applyTo;
+
+    final nameChanged = newName != null &&
+        newName.isNotEmpty &&
+        newName != perk.attr('Name');
+
+    final applyChanged = newApplyTo != null &&
+        newApplyTo != perk.attr('ApplyTo');
+
     if (!nameChanged && !applyChanged) return;
+
     _mutate(() {
-      if (nameChanged) perk.put('Name', name);
+      if (nameChanged) {
+        perk.put('Name', newName!);
+      }
+
       if (applyChanged) {
-        if (applyTo.isEmpty) {
+        if (newApplyTo!.isEmpty) {
           perk.removeAttribute('ApplyTo');
         } else {
-          perk.put('ApplyTo', applyTo);
+          perk.put('ApplyTo', newApplyTo);
         }
       }
     });
@@ -412,41 +684,63 @@ class RaidForgeController extends ChangeNotifier {
 
   XmlElement ensureSetNode(XmlElement perk) {
     var set = perk.kid('Set');
+
     if (set == null) {
       set = makeEl('Set');
+
       final s = set;
+
       _mutate(() => perk.children.add(s));
     }
+
     return set;
   }
 
-  // ---------- rules ----------
+  // ----------------------------------------------------------
+  // RULES
+  // ----------------------------------------------------------
 
   XmlElement? ensureRules(XmlElement battle) {
     final fight = getFight(battle);
+
     if (fight == null) return null;
+
     var rules = fight.kid('Rules');
+
     if (rules == null) {
       rules = makeEl('Rules');
+
       final r = rules;
+
       _mutate(() => fight.children.add(r));
     }
+
     return rules;
   }
 
-  void editAvatarName(XmlElement rules, String newAvatar, String newName) {
+  void editAvatarName(
+    XmlElement rules,
+    String newAvatar,
+    String newName,
+  ) {
     final avatar = rules.kid('Avatar');
+
     final charName = rules.kid('Name');
-    if (newAvatar == (avatar?.attr('Name') ?? '') && newName == (charName?.attr('Name') ?? '')) {
+
+    if (newAvatar == (avatar?.attr('Name') ?? '') &&
+        newName == (charName?.attr('Name') ?? '')) {
       return;
     }
+
     _mutate(() {
       var a = avatar;
+
       if (newAvatar.isNotEmpty) {
         if (a == null) {
           a = makeEl('Avatar');
           rules.children.insert(0, a);
         }
+
         a.put('Name', newAvatar);
       } else if (a != null) {
         a.remove();
@@ -454,12 +748,18 @@ class RaidForgeController extends ChangeNotifier {
       }
 
       var n = charName;
+
       if (newName.isNotEmpty) {
         if (n == null) {
           n = makeEl('Name');
-          final idx = a != null ? rules.children.indexOf(a) + 1 : 0;
+
+          final idx = a != null
+              ? rules.children.indexOf(a) + 1
+              : 0;
+
           rules.children.insert(idx, n);
         }
+
         n.put('Name', newName);
       } else if (n != null) {
         n.remove();
@@ -467,14 +767,34 @@ class RaidForgeController extends ChangeNotifier {
     });
   }
 
-  void addEquipItem(XmlElement rules, String name, [String applyTo = 'Player']) {
-    _mutate(() => rules.children.add(makeEl('EquipItem', {'Name': name, 'ApplyTo': applyTo})));
+  void addEquipItem(
+    XmlElement rules,
+    String name, [
+    String applyTo = 'Player',
+  ]) {
+    _mutate(() {
+      rules.children.add(
+        makeEl('EquipItem', {
+          'Name': name,
+          'ApplyTo': applyTo,
+        }),
+      );
+    });
   }
 
-  void editEquipItem(XmlElement item, String name, String applyTo) {
-    if (name == item.attr('Name') && applyTo == item.attr('ApplyTo', 'Player')) return;
+  void editEquipItem(
+    XmlElement item,
+    String name,
+    String applyTo,
+  ) {
+    if (name == item.attr('Name') &&
+        applyTo == item.attr('ApplyTo', 'Player')) {
+      return;
+    }
+
     _mutate(() {
       item.put('Name', name);
+
       if (applyTo.isNotEmpty) {
         item.put('ApplyTo', applyTo);
       } else {
@@ -483,88 +803,141 @@ class RaidForgeController extends ChangeNotifier {
     });
   }
 
-  void quickEquipment(XmlElement rules, String itemsLine, [String applyTo = 'Player']) {
-    final names = itemsLine.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+  void quickEquipment(
+    XmlElement rules,
+    String itemsLine, [
+    String applyTo = 'Player',
+  ]) {
+    final names = itemsLine
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+
     if (names.isEmpty) return;
+
     _mutate(() {
       for (final n in names) {
-        rules.children.add(makeEl('EquipItem', {'Name': n, 'ApplyTo': applyTo}));
+        rules.children.add(
+          makeEl('EquipItem', {
+            'Name': n,
+            'ApplyTo': applyTo,
+          }),
+        );
       }
     });
   }
 
-  void addComplexRulePreset(XmlElement rules, String presetKey) {
+  void addComplexRulePreset(
+    XmlElement rules,
+    String presetKey,
+  ) {
     final preset = presetRules[presetKey];
+
     if (preset == null) return;
+
     final (_, alias, tag, attrs) = preset;
+
     _mutate(() {
       final cr = makeEl('ComplexRule');
-      cr.children.add(makeEl('Description', {'Alias': alias}));
+
+      cr.children.add(
+        makeEl('Description', {'Alias': alias}),
+      );
+
       cr.children.add(makeEl(tag, attrs));
+
       rules.children.add(cr);
     });
   }
 
-  void setComplexRuleAlias(XmlElement rule, String alias) {
+  void setComplexRuleAlias(
+    XmlElement rule,
+    String alias,
+  ) {
     _mutate(() {
       var desc = rule.kid('Description');
+
       if (desc == null) {
         desc = makeEl('Description');
         rule.children.insert(0, desc);
       }
+
       desc.put('Alias', alias);
     });
   }
 
-  List<XmlElement> complexRuleChildren(XmlElement rule) =>
-      rule.childElements.where((e) => e.name.local != 'Description').toList();
+  List<XmlElement> complexRuleChildren(XmlElement rule) {
+    return rule.childElements
+        .where((e) => e.name.local != 'Description')
+        .toList();
+  }
 
   XmlElement createRulesWithConditions(XmlElement rules) {
     final wrapper = makeEl('RulesWithConditions')
       ..children.add(makeEl('Conditions'))
       ..children.add(makeEl('RuleList'));
+
     _mutate(() => rules.children.add(wrapper));
+
     return wrapper;
   }
 
   XmlElement ensureConditions(XmlElement wrapper) {
     var c = wrapper.kid('Conditions');
+
     if (c == null) {
       c = makeEl('Conditions');
+
       final x = c;
+
       _mutate(() => wrapper.children.add(x));
     }
+
     return c;
   }
 
   XmlElement ensureRuleList(XmlElement wrapper) {
     var r = wrapper.kid('RuleList');
+
     if (r == null) {
       r = makeEl('RuleList');
+
       final x = r;
+
       _mutate(() => wrapper.children.add(x));
     }
+
     return r;
   }
 
   void clearUserRules(XmlElement rules) {
     _mutate(() {
       for (final child in rules.childElements.toList()) {
-        if (removableRuleTags.contains(child.name.local)) child.remove();
+        if (removableRuleTags.contains(child.name.local)) {
+          child.remove();
+        }
       }
     });
   }
 
-  // ---------- rewards ----------
+  // ----------------------------------------------------------
+  // REWARDS
+  // ----------------------------------------------------------
 
   XmlElement createReward(XmlElement battle) {
     final r = makeEl('Reward');
+
     _mutate(() => battle.children.add(r));
+
     return r;
   }
 
-  void editReward(XmlElement reward,
-      {required String prizeBase, required String exp, required String bonus}) {
+  void editReward(
+    XmlElement reward, {
+    required String prizeBase,
+    required String exp,
+    required String bonus,
+  }) {
     _mutate(() {
       reward.put('PrizeBase', prizeBase);
       reward.put('Exp', exp);
@@ -572,46 +945,89 @@ class RaidForgeController extends ChangeNotifier {
     });
   }
 
-  void addCurrency(XmlElement reward, String name, [String expectedValue = '0']) {
-    _mutate(() => reward.children
-        .add(makeEl('Currency', {'Name': name, 'ExpectedValue': expectedValue})));
+  void addCurrency(
+    XmlElement reward,
+    String name, [
+    String expectedValue = '0',
+  ]) {
+    _mutate(() {
+      reward.children.add(
+        makeEl('Currency', {
+          'Name': name,
+          'ExpectedValue': expectedValue,
+        }),
+      );
+    });
   }
 
-  void editCurrency(XmlElement currency, String name, String expectedValue) {
+  void editCurrency(
+    XmlElement currency,
+    String name,
+    String expectedValue,
+  ) {
     _mutate(() {
       currency.put('Name', name);
       currency.put('ExpectedValue', expectedValue);
     });
   }
 
-  String elementToXml(XmlElement el) => el.toXmlString(pretty: true, indent: '  ');
+  String elementToXml(XmlElement el) {
+    return el.toXmlString(pretty: true, indent: '  ');
+  }
 
-  // ---------- diagnostics ----------
+  // ----------------------------------------------------------
+  // DIAGNOSTICS
+  // ----------------------------------------------------------
 
   DiagnosticsResult diagnostics() {
     final errors = <String>[];
+
     final warnings = <String>[];
+
     final zs = zones();
-    if (zs.isEmpty) warnings.add('Zones отсутствует или пуст.');
+
+    if (zs.isEmpty) {
+      warnings.add('Zones отсутствует или пуст.');
+    }
 
     for (final zone in zs) {
-      if (zone.attr('Name').isEmpty) warnings.add('Zone без Name.');
+      if (zone.attr('Name').isEmpty) {
+        warnings.add('Zone без Name.');
+      }
+
       for (final battle in zone.kids('Battle')) {
         final bn = battle.attr('Name', '?');
-        if (battle.attr('Name').isEmpty) warnings.add('Battle без Name.');
-        if (getWarrior(battle) == null) warnings.add('$bn: нет Warrior.');
-        if (getFight(battle) == null) warnings.add('$bn: нет Fight.');
+
+        if (battle.attr('Name').isEmpty) {
+          warnings.add('Battle без Name.');
+        }
+
+        if (getWarrior(battle) == null) {
+          warnings.add('$bn: нет Warrior.');
+        }
+
+        if (getFight(battle) == null) {
+          warnings.add('$bn: нет Fight.');
+        }
+
         final rules = getRules(battle);
+
         if (rules != null) {
           for (final item in rules.kids('EquipItem')) {
-            if (item.attr('Name').isEmpty) errors.add('$bn: EquipItem без Name.');
+            if (item.attr('Name').isEmpty) {
+              errors.add('$bn: EquipItem без Name.');
+            }
           }
+
           for (final perk in rules.kids('Perk')) {
-            if (perk.attr('Name').isEmpty) errors.add('$bn: Rule-Perk без Name.');
+            if (perk.attr('Name').isEmpty) {
+              errors.add('$bn: Rule-Perk без Name.');
+            }
           }
         }
       }
     }
+
     return DiagnosticsResult(errors, warnings, statistics());
   }
 }
@@ -622,11 +1038,17 @@ class RaidForgeController extends ChangeNotifier {
 
 late RaidForgeController ctrl;
 
-void go(BuildContext c, Widget w) =>
-    Navigator.of(c).push(MaterialPageRoute(builder: (_) => w));
+void go(BuildContext c, Widget w) {
+  Navigator.of(c).push(
+    MaterialPageRoute(builder: (_) => w),
+  );
+}
 
-void toast(BuildContext c, String m) =>
-    ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(m)));
+void toast(BuildContext c, String m) {
+  ScaffoldMessenger.of(c).showSnackBar(
+    SnackBar(content: Text(m)),
+  );
+}
 
 Future<bool> confirm(BuildContext c, String msg) async {
   final r = await showDialog<bool>(
@@ -634,15 +1056,21 @@ Future<bool> confirm(BuildContext c, String msg) async {
     builder: (x) => AlertDialog(
       content: Text(msg),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(x, false), child: const Text('Нет')),
-        FilledButton(onPressed: () => Navigator.pop(x, true), child: const Text('Да')),
+        TextButton(
+          onPressed: () => Navigator.pop(x, false),
+          child: const Text('Нет'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(x, true),
+          child: const Text('Да'),
+        ),
       ],
     ),
   );
+
   return r ?? false;
 }
 
-/// Диалог с несколькими текстовыми полями. Пустое поле = пустое значение.
 Future<Map<String, String>?> form(
   BuildContext c,
   String title,
@@ -650,8 +1078,10 @@ Future<Map<String, String>?> form(
   String hint = '',
 }) {
   final ctrls = {
-    for (final e in fields.entries) e.key: TextEditingController(text: e.value),
+    for (final e in fields.entries)
+      e.key: TextEditingController(text: e.value),
   };
+
   return showDialog<Map<String, String>>(
     context: c,
     builder: (x) => AlertDialog(
@@ -663,7 +1093,13 @@ Future<Map<String, String>?> form(
             if (hint.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(hint, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                child: Text(
+                  hint,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                ),
               ),
             for (final e in ctrls.entries)
               TextField(
@@ -674,10 +1110,14 @@ Future<Map<String, String>?> form(
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(x), child: const Text('Отмена')),
+        TextButton(
+          onPressed: () => Navigator.pop(x),
+          child: const Text('Отмена'),
+        ),
         FilledButton(
           onPressed: () => Navigator.pop(x, {
-            for (final e in ctrls.entries) e.key: e.value.text.trim(),
+            for (final e in ctrls.entries)
+              e.key: e.value.text.trim(),
           }),
           child: const Text('OK'),
         ),
@@ -686,7 +1126,11 @@ Future<Map<String, String>?> form(
   );
 }
 
-Future<int?> pick(BuildContext c, String title, List<String> items) {
+Future<int?> pick(
+  BuildContext c,
+  String title,
+  List<String> items,
+) {
   return showDialog<int>(
     context: c,
     builder: (x) => AlertDialog(
@@ -708,138 +1152,289 @@ Future<int?> pick(BuildContext c, String title, List<String> items) {
   );
 }
 
-Widget tile(IconData icon, String title,
-        {String? sub, VoidCallback? onTap, Widget? trailing}) =>
-    ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: sub == null ? null : Text(sub),
-      trailing: trailing ?? (onTap != null ? const Icon(Icons.chevron_right) : null),
-      onTap: onTap,
-    );
+Widget tile(
+  IconData icon,
+  String title, {
+  String? sub,
+  VoidCallback? onTap,
+  Widget? trailing,
+}) {
+  return ListTile(
+    leading: Icon(icon),
+    title: Text(title),
+    subtitle: sub == null ? null : Text(sub),
+    trailing: trailing ??
+        (onTap != null ? const Icon(Icons.chevron_right) : null),
+    onTap: onTap,
+  );
+}
 
-Widget emptyNote(String text) => Padding(
-      padding: const EdgeInsets.all(24),
-      child: Center(child: Text(text, style: const TextStyle(color: Colors.grey))),
-    );
+Widget emptyNote(String text) {
+  return Padding(
+    padding: const EdgeInsets.all(24),
+    child: Center(
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.grey),
+      ),
+    ),
+  );
+}
 
 Future<void> doSave(BuildContext context) async {
   if (!ctrl.dirty) {
     toast(context, 'Нет изменений для сохранения.');
     return;
   }
+
   try {
     final b = await ctrl.save();
-    if (context.mounted) toast(context, 'XML сохранён. Backup: $b');
+
+    if (context.mounted) {
+      toast(context, 'XML сохранён. Backup: $b');
+    }
   } catch (e) {
-    if (context.mounted) toast(context, 'Ошибка сохранения: $e');
+    if (context.mounted) {
+      toast(context, 'Ошибка сохранения: $e');
+    }
   }
 }
 
 // ============================================================
-// APP / START
+// APP
 // ============================================================
 
-void main() => runApp(const RaidForgeApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  runApp(const RaidForgeApp());
+}
 
 class RaidForgeApp extends StatelessWidget {
   const RaidForgeApp({super.key});
+
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'SF2 Raid Forge',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: Colors.deepPurple,
-          brightness: Brightness.dark,
-          useMaterial3: true,
-        ),
-        home: const StartScreen(),
-      );
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'SF2 Raid Forge',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorSchemeSeed: Colors.deepPurple,
+        brightness: Brightness.dark,
+        useMaterial3: true,
+      ),
+      home: const StartScreen(),
+    );
+  }
 }
+
+// ============================================================
+// START SCREEN
+// ============================================================
 
 class StartScreen extends StatefulWidget {
   const StartScreen({super.key});
+
   @override
   State<StartScreen> createState() => _StartScreenState();
 }
 
 class _StartScreenState extends State<StartScreen> {
-  final _path = TextEditingController(text: defaultFilePath);
+  late final TextEditingController _path;
+
   bool _busy = false;
 
-  // Метод для выбора файла через системный проводник
-  Future<void> _pickFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-      );
-      if (result != null && result.files.single.path != null) {
-        setState(() {
-          _path.text = result.files.single.path!;
-        });
-      }
-    } catch (e) {
-      if (mounted) toast(context, 'Ошибка выбора файла: $e');
-    }
-  }
+  @override
+  void initState() {
+    super.initState();
 
-  Future<void> _open() async {
-    setState(() => _busy = true);
-    try {
-      final c = RaidForgeController(_path.text.trim());
-      await c.load();
-      ctrl = c;
-      if (mounted) go(context, const HomeScreen());
-    } on RaidForgeException catch (e) {
-      if (mounted) toast(context, e.message);
-    } catch (e) {
-      if (mounted) toast(context, 'Ошибка: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    _path = TextEditingController(
+      text: defaultFilePath,
+    );
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('SHADOW FIGHT 2 • RAID FORGE')),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _path,
-                      decoration: const InputDecoration(
-                        labelText: 'Путь к raid_stages.xml',
-                        border: OutlineInputBorder(),
-                      ),
+  void dispose() {
+    _path.dispose();
+
+    super.dispose();
+  }
+
+  // ----------------------------------------------------------
+  // REQUEST STORAGE PERMISSION
+  // ----------------------------------------------------------
+
+  Future<void> _requestPermission() async {
+    final granted = await requestStoragePermission();
+
+    if (!mounted) return;
+
+    if (granted) {
+      toast(context, 'Доступ ко всем файлам разрешён.');
+    } else {
+      toast(
+        context,
+        'Разрешение не выдано. Проверь специальный доступ к файлам.',
+      );
+
+      await openAppSettings();
+    }
+  }
+
+  // ----------------------------------------------------------
+  // PICK FILE
+  // ----------------------------------------------------------
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xml'],
+        allowMultiple: false,
+      );
+
+      if (!mounted || result == null) return;
+
+      final selected = result.files.single.path;
+
+      if (selected == null) {
+        toast(context, 'Не удалось получить путь к файлу.');
+        return;
+      }
+
+      setState(() {
+        _path.text = selected;
+      });
+
+      toast(
+        context,
+        'Файл выбран. Проверь путь перед сохранением.',
+      );
+    } catch (e) {
+      if (mounted) {
+        toast(context, 'Ошибка выбора файла: $e');
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // OPEN FILE
+  // ----------------------------------------------------------
+
+  Future<void> _open() async {
+    if (_busy) return;
+
+    setState(() => _busy = true);
+
+    try {
+      final granted = await requestStoragePermission();
+
+      if (!mounted) return;
+
+      if (!granted) {
+        toast(
+          context,
+          'Сначала разреши приложению доступ ко всем файлам.',
+        );
+
+        await openAppSettings();
+
+        return;
+      }
+
+      final path = _path.text.trim();
+
+      if (path.isEmpty) {
+        toast(context, 'Укажи путь к XML-файлу.');
+        return;
+      }
+
+      final c = RaidForgeController(path);
+
+      await c.load();
+
+      if (!mounted) {
+        c.dispose();
+        return;
+      }
+
+      ctrl = c;
+
+      go(context, const HomeScreen());
+    } on RaidForgeException catch (e) {
+      if (mounted) {
+        toast(context, e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        toast(context, 'Ошибка: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // UI
+  // ----------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('SHADOW FIGHT 2 • RAID FORGE'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _path,
+                    decoration: const InputDecoration(
+                      labelText: 'Путь к raid_stages.xml',
+                      border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: 'Обзор',
-                    icon: const Icon(Icons.folder_open),
-                    onPressed: _busy ? null : _pickFile,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _open,
-                  icon: const Icon(Icons.check),
-                  label: Text(_busy ? 'Загрузка...' : 'Открыть файл'),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  tooltip: 'Обзор',
+                  icon: const Icon(Icons.folder_open),
+                  onPressed: _busy ? null : _pickFile,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _open,
+                icon: const Icon(Icons.check),
+                label: Text(
+                  _busy ? 'Загрузка...' : 'Открыть файл',
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _requestPermission,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Разрешить доступ к Storage'),
+              ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
-
 
 // ============================================================
 // HOME
@@ -854,23 +1449,38 @@ class HomeScreen extends StatelessWidget {
       listenable: ctrl,
       builder: (context, _) {
         final st = ctrl.statistics();
+
         final zs = ctrl.zones();
+
         return PopScope(
           canPop: !ctrl.dirty,
           onPopInvokedWithResult: (didPop, _) async {
             if (didPop) return;
+
             final ok = await confirm(
-                context, 'Есть несохранённые изменения. Выйти без сохранения?');
-            if (ok && context.mounted) Navigator.of(context).pop();
+              context,
+              'Есть несохранённые изменения. Выйти без сохранения?',
+            );
+
+            if (ok && context.mounted) {
+              Navigator.of(context).pop();
+            }
           },
           child: Scaffold(
             appBar: AppBar(
-              title: Text(ctrl.dirty ? 'RAID FORGE  ● изменён' : 'RAID FORGE'),
+              title: Text(
+                ctrl.dirty
+                    ? 'RAID FORGE  ● изменён'
+                    : 'RAID FORGE',
+              ),
               actions: [
                 IconButton(
                   tooltip: 'Поиск босса',
                   icon: const Icon(Icons.search),
-                  onPressed: () => go(context, const SearchScreen()),
+                  onPressed: () => go(
+                    context,
+                    const SearchScreen(),
+                  ),
                 ),
                 IconButton(
                   tooltip: 'Отменить (${ctrl.undoCount}/$maxUndo)',
@@ -880,7 +1490,9 @@ class HomeScreen extends StatelessWidget {
                     child: const Icon(Icons.undo),
                   ),
                   onPressed: () {
-                    if (!ctrl.undo()) toast(context, 'История изменений пуста.');
+                    if (!ctrl.undo()) {
+                      toast(context, 'История изменений пуста.');
+                    }
                   },
                 ),
                 IconButton(
@@ -890,23 +1502,35 @@ class HomeScreen extends StatelessWidget {
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
-                    if (v == 'diag') go(context, const DiagnosticsScreen());
+                    if (v == 'diag') {
+                      go(context, const DiagnosticsScreen());
+                    }
+
                     if (v == 'about') {
                       showAboutDialog(
                         context: context,
                         applicationName: 'SF2 Raid Forge',
                         children: const [
-                          Text('XML-редактор raid_stages.\n\n'
-                              'Zones / Battles, Warrior, Perks, Rules, EquipItem, '
-                              'ComplexRules, RulesWithConditions, Rewards, поиск, '
-                              'undo, диагностика, атомарное сохранение с backup.'),
+                          Text(
+                            'XML-редактор raid_stages.\n\n'
+                            'Zones / Battles, Warrior, Perks, Rules, '
+                            'EquipItem, ComplexRules, RulesWithConditions, '
+                            'Rewards, поиск, undo, диагностика, '
+                            'сохранение с backup.',
+                          ),
                         ],
                       );
                     }
                   },
                   itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'diag', child: Text('Проверить XML')),
-                    PopupMenuItem(value: 'about', child: Text('О программе')),
+                    PopupMenuItem(
+                      value: 'diag',
+                      child: Text('Проверить XML'),
+                    ),
+                    PopupMenuItem(
+                      value: 'about',
+                      child: Text('О программе'),
+                    ),
                   ],
                 ),
               ],
@@ -915,13 +1539,33 @@ class HomeScreen extends StatelessWidget {
               icon: const Icon(Icons.add),
               label: const Text('Зона'),
               onPressed: () async {
-                final r = await form(context, 'Создание зоны', {'Name': '', 'FileName': ''});
+                final r = await form(
+                  context,
+                  'Создание зоны',
+                  {
+                    'Name': '',
+                    'FileName': '',
+                  },
+                );
+
                 if (r == null) return;
-                if (r['Name']!.isEmpty || r['FileName']!.isEmpty) {
-                  if (context.mounted) toast(context, 'Значение не может быть пустым.');
+
+                if (r['Name']!.isEmpty ||
+                    r['FileName']!.isEmpty) {
+                  if (context.mounted) {
+                    toast(
+                      context,
+                      'Значение не может быть пустым.',
+                    );
+                  }
+
                   return;
                 }
-                ctrl.createZone(r['Name']!, r['FileName']!);
+
+                ctrl.createZone(
+                  r['Name']!,
+                  r['FileName']!,
+                );
               },
             ),
             body: ListView(
@@ -943,7 +1587,9 @@ class HomeScreen extends StatelessWidget {
                         'Currencies': st.currencies,
                         'Conditions': st.conditions,
                       }.entries)
-                        Chip(label: Text('${e.key}: ${e.value}')),
+                        Chip(
+                          label: Text('${e.key}: ${e.value}'),
+                        ),
                     ],
                   ),
                 ),
@@ -954,25 +1600,50 @@ class HomeScreen extends StatelessWidget {
                     leading: const Icon(Icons.dns),
                     title: Text(zone.attr('Name', '?')),
                     subtitle: Text(
-                        '${zone.attr('FileName', 'N/A')} • ${zone.kids('Battle').length} battles'),
-                    onTap: () => go(context, ZoneScreen(zone)),
+                      '${zone.attr('FileName', 'N/A')} • '
+                      '${zone.kids('Battle').length} battles',
+                    ),
+                    onTap: () => go(
+                      context,
+                      ZoneScreen(zone),
+                    ),
                     trailing: PopupMenuButton<String>(
                       onSelected: (v) async {
                         if (v == 'edit') {
-                          final r = await form(context, 'Зона', {
-                            'Name': zone.attr('Name'),
-                            'FileName': zone.attr('FileName'),
-                          });
-                          if (r != null) ctrl.editZone(zone, r['Name']!, r['FileName']!);
+                          final r = await form(
+                            context,
+                            'Зона',
+                            {
+                              'Name': zone.attr('Name'),
+                              'FileName': zone.attr('FileName'),
+                            },
+                          );
+
+                          if (r != null) {
+                            ctrl.editZone(
+                              zone,
+                              r['Name']!,
+                              r['FileName']!,
+                            );
+                          }
                         } else if (v == 'del') {
-                          if (await confirm(context, 'Удалить зону ${zone.attr('Name')}?')) {
+                          if (await confirm(
+                            context,
+                            'Удалить зону ${zone.attr('Name')}?',
+                          )) {
                             ctrl.deleteZone(zone);
                           }
                         }
                       },
                       itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Переименовать / изменить')),
-                        PopupMenuItem(value: 'del', child: Text('Удалить')),
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Переименовать / изменить'),
+                        ),
+                        PopupMenuItem(
+                          value: 'del',
+                          child: Text('Удалить'),
+                        ),
                       ],
                     ),
                   ),
@@ -987,11 +1658,12 @@ class HomeScreen extends StatelessWidget {
 }
 
 // ============================================================
-// SEARCH / DIAGNOSTICS / XML VIEW
+// SEARCH
 // ============================================================
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
+
   @override
   State<SearchScreen> createState() => _SearchScreenState();
 }
@@ -1002,6 +1674,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final res = ctrl.searchBosses(q.trim());
+
     return Scaffold(
       appBar: AppBar(
         title: TextField(
@@ -1023,8 +1696,14 @@ class _SearchScreenState extends State<SearchScreen> {
                       ListTile(
                         leading: const Icon(Icons.person),
                         title: Text(battle.attr('Name', '?')),
-                        subtitle: Text('[${zone.attr('Name', '?')}] ${battle.attr('Title')}'),
-                        onTap: () => go(context, BossScreen(battle)),
+                        subtitle: Text(
+                          '[${zone.attr('Name', '?')}] '
+                          '${battle.attr('Title')}',
+                        ),
+                        onTap: () => go(
+                          context,
+                          BossScreen(battle),
+                        ),
                       ),
                   ],
                 ),
@@ -1032,60 +1711,102 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
+// ============================================================
+// DIAGNOSTICS
+// ============================================================
+
 class DiagnosticsScreen extends StatelessWidget {
   const DiagnosticsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final d = ctrl.diagnostics();
+
     final s = d.stats;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('XML DIAGNOSTICS')),
+      appBar: AppBar(
+        title: const Text('XML DIAGNOSTICS'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
           if (d.errors.isEmpty)
-            const Text('✓ Критических структурных ошибок не обнаружено.',
-                style: TextStyle(color: Colors.greenAccent))
+            const Text(
+              '✓ Критических структурных ошибок не обнаружено.',
+              style: TextStyle(color: Colors.greenAccent),
+            )
           else ...[
-            Text('Ошибки: ${d.errors.length}', style: const TextStyle(color: Colors.redAccent)),
-            for (final e in d.errors) Text('✗ $e'),
+            Text(
+              'Ошибки: ${d.errors.length}',
+              style: const TextStyle(color: Colors.redAccent),
+            ),
+            for (final e in d.errors)
+              Text('✗ $e'),
           ],
           if (d.warnings.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text('Предупреждения: ${d.warnings.length}',
-                style: const TextStyle(color: Colors.amber)),
-            for (final w in d.warnings) Text('• $w'),
+            Text(
+              'Предупреждения: ${d.warnings.length}',
+              style: const TextStyle(color: Colors.amber),
+            ),
+            for (final w in d.warnings)
+              Text('• $w'),
           ],
           const SizedBox(height: 16),
-          const Text('Statistics', style: TextStyle(color: Colors.cyanAccent)),
-          Text('Zones=${s.zones}, Battles=${s.battles}, Warriors=${s.warriors}'),
-          Text('WarriorPerks=${s.warriorPerks}, RulePerks=${s.rulePerks}, '
-              'ComplexRules=${s.complexRules}'),
-          Text('EquipItems=${s.equipItems}, Currency=${s.currencies}, '
-              'Conditions=${s.conditions}'),
+          const Text(
+            'Statistics',
+            style: TextStyle(color: Colors.cyanAccent),
+          ),
+          Text(
+            'Zones=${s.zones}, Battles=${s.battles}, Warriors=${s.warriors}',
+          ),
+          Text(
+            'WarriorPerks=${s.warriorPerks}, '
+            'RulePerks=${s.rulePerks}, '
+            'ComplexRules=${s.complexRules}',
+          ),
+          Text(
+            'EquipItems=${s.equipItems}, '
+            'Currency=${s.currencies}, '
+            'Conditions=${s.conditions}',
+          ),
         ],
       ),
     );
   }
 }
 
+// ============================================================
+// XML VIEW
+// ============================================================
+
 class XmlViewScreen extends StatelessWidget {
   final XmlElement el;
+
   const XmlViewScreen(this.el, {super.key});
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('XML VIEW')),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(8),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SelectableText(
-              ctrl.elementToXml(el),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('XML VIEW'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(8),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SelectableText(
+            ctrl.elementToXml(el),
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ============================================================
@@ -1094,22 +1815,43 @@ class XmlViewScreen extends StatelessWidget {
 
 class ZoneScreen extends StatelessWidget {
   final XmlElement zone;
+
   const ZoneScreen(this.zone, {super.key});
 
   Future<void> _cloneToZone(BuildContext context) async {
     final all = ctrl.battles();
+
     if (all.isEmpty) {
       toast(context, 'Нет боёв для клонирования.');
       return;
     }
-    final i = await pick(context, 'Шаблон босса', [
-      for (final (z, b) in all) '[${z.attr('Name', '?')}] ${b.attr('Name', '?')}',
-    ]);
+
+    final i = await pick(
+      context,
+      'Шаблон босса',
+      [
+        for (final (z, b) in all)
+          '[${z.attr('Name', '?')}] ${b.attr('Name', '?')}',
+      ],
+    );
+
     if (i == null || !context.mounted) return;
+
     final cur = all[i].$2.attr('Name', 'BOSS');
-    final r = await form(context, 'Новое Name', {'Name': '${cur}_COPY'});
+
+    final r = await form(
+      context,
+      'Новое Name',
+      {'Name': '${cur}_COPY'},
+    );
+
     if (r == null) return;
-    ctrl.cloneBattleToZone(all[i].$2, zone, r['Name']);
+
+    ctrl.cloneBattleToZone(
+      all[i].$2,
+      zone,
+      r['Name'],
+    );
   }
 
   @override
@@ -1118,6 +1860,7 @@ class ZoneScreen extends StatelessWidget {
       listenable: ctrl,
       builder: (context, _) {
         final battles = zone.kids('Battle').toList();
+
         return Scaffold(
           appBar: AppBar(
             title: Text('ЗОНА — ${zone.attr('Name', '?')}'),
@@ -1136,23 +1879,50 @@ class ZoneScreen extends StatelessWidget {
                         leading: const Icon(Icons.person),
                         title: Text(b.attr('Name', 'UNKNOWN')),
                         subtitle: Text(
-                            '${b.attr('Title', 'N/A')}  •  PWR=${ctrl.getWarrior(b)?.attr('WarriorPower', '?') ?? '?'}'),
-                        onTap: () => go(context, BossScreen(b)),
+                          '${b.attr('Title', 'N/A')} • '
+                          'PWR=${ctrl.getWarrior(b)?.attr('WarriorPower', '?') ?? '?'}',
+                        ),
+                        onTap: () => go(
+                          context,
+                          BossScreen(b),
+                        ),
                         trailing: PopupMenuButton<String>(
                           onSelected: (v) async {
                             if (v == 'dup') {
-                              final r = await form(context, 'Дублировать бой',
-                                  {'Name': '${b.attr('Name', 'BOSS')}_COPY'});
-                              if (r != null) ctrl.duplicateBattle(zone, b, r['Name']);
+                              final r = await form(
+                                context,
+                                'Дублировать бой',
+                                {
+                                  'Name':
+                                      '${b.attr('Name', 'BOSS')}_COPY',
+                                },
+                              );
+
+                              if (r != null) {
+                                ctrl.duplicateBattle(
+                                  zone,
+                                  b,
+                                  r['Name'],
+                                );
+                              }
                             } else if (v == 'del') {
-                              if (await confirm(context, 'Удалить ${b.attr('Name')}?')) {
+                              if (await confirm(
+                                context,
+                                'Удалить ${b.attr('Name')}?',
+                              )) {
                                 ctrl.deleteBattle(b);
                               }
                             }
                           },
                           itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'dup', child: Text('Дублировать в этой зоне')),
-                            PopupMenuItem(value: 'del', child: Text('Удалить')),
+                            PopupMenuItem(
+                              value: 'dup',
+                              child: Text('Дублировать в этой зоне'),
+                            ),
+                            PopupMenuItem(
+                              value: 'del',
+                              child: Text('Удалить'),
+                            ),
                           ],
                         ),
                       ),
@@ -1171,6 +1941,7 @@ class ZoneScreen extends StatelessWidget {
 
 class BossScreen extends StatelessWidget {
   final XmlElement battle;
+
   const BossScreen(this.battle, {super.key});
 
   @override
@@ -1179,74 +1950,226 @@ class BossScreen extends StatelessWidget {
       listenable: ctrl,
       builder: (context, _) {
         final warrior = ctrl.getWarrior(battle);
+
         final fight = ctrl.getFight(battle);
+
         final name = battle.attr('Name', 'N/A');
 
         return Scaffold(
-          appBar: AppBar(title: Text('БОСС — $name')),
+          appBar: AppBar(
+            title: Text('БОСС — $name'),
+          ),
           body: ListView(
             children: [
-              tile(Icons.edit, 'Имя / Title',
-                  sub: '$name / ${battle.attr('Title', 'N/A')}',
-                  onTap: () async {
-                final r = await form(context, 'Имя / Title', {
-                  'Name': battle.attr('Name'),
-                  'Title': battle.attr('Title'),
-                });
-                if (r != null) ctrl.editBossIdentity(battle, r['Name']!, r['Title']!);
-              }),
-              tile(Icons.place, 'Location', sub: battle.attr('Location', 'N/A'), onTap: () async {
-                final r = await form(context, 'Location', {'Location': battle.attr('Location')});
-                if (r != null) ctrl.changeAttr(battle, 'Location', r['Location']!);
-              }),
-              tile(Icons.tune, 'Battle attributes',
-                  sub: '${battle.attributes.length} attrs',
-                  onTap: () => go(context, AttrsScreen(battle, 'Battle attributes'))),
-              tile(Icons.person_outline, 'Warrior Template',
-                  sub: warrior?.attr('Template', 'N/A') ?? 'N/A', onTap: () async {
-                if (warrior == null) return toast(context, 'Нет Warrior');
-                final r = await form(context, 'Template', {'Template': warrior.attr('Template')});
-                if (r != null) ctrl.changeAttr(warrior, 'Template', r['Template']!);
-              }),
-              tile(Icons.shield, 'Warrior Power / Shields',
-                  sub:
-                      '${warrior?.attr('WarriorPower', 'N/A') ?? 'N/A'} / ${warrior?.attr('ShieldTotal', '0') ?? '0'}',
-                  onTap: () async {
-                if (warrior == null) return toast(context, 'Нет Warrior');
-                final r = await form(context, 'Power / Shields', {
-                  'WarriorPower': warrior.attr('WarriorPower', '0'),
-                  'ShieldTotal': warrior.attr('ShieldTotal', '0'),
-                });
-                if (r != null) ctrl.editPowerShields(warrior, r['WarriorPower']!, r['ShieldTotal']!);
-              }),
-              tile(Icons.timer, 'Rounds / RoundTime',
-                  sub:
-                      '${fight?.attr('Rounds', 'N/A') ?? 'N/A'} / ${fight?.attr('RoundTime', 'N/A') ?? 'N/A'}s',
-                  onTap: () async {
-                if (fight == null) return toast(context, 'Нет Fight');
-                final r = await form(context, 'Rounds / RoundTime', {
-                  'Rounds': fight.attr('Rounds', '0'),
-                  'RoundTime': fight.attr('RoundTime', '999'),
-                });
-                if (r != null) ctrl.editRounds(fight, r['Rounds']!, r['RoundTime']!);
-              }),
-              tile(Icons.auto_awesome, 'Warrior Perks', onTap: () {
-                if (warrior == null) return toast(context, 'Нет Warrior');
-                final perks = ctrl.ensurePerks(warrior);
-                go(context, PerksScreen(perks, rule: false, title: 'WARRIOR PERKS'));
-              }),
-              tile(Icons.rule, 'Rules / Player Setup', onTap: () {
-                final rules = ctrl.ensureRules(battle);
-                if (rules == null) return toast(context, 'Fight отсутствует.');
-                go(context, RulesScreen(rules));
-              }),
-              tile(Icons.card_giftcard, 'Rewards / Currency',
-                  onTap: () => go(context, RewardsScreen(battle))),
-              tile(Icons.tune, 'Warrior attributes', onTap: () {
-                if (warrior == null) return toast(context, 'Нет Warrior');
-                go(context, AttrsScreen(warrior, 'Warrior attributes'));
-              }),
-              tile(Icons.code, 'Полный XML Battle', onTap: () => go(context, XmlViewScreen(battle))),
+              tile(
+                Icons.edit,
+                'Имя / Title',
+                sub: '$name / ${battle.attr('Title', 'N/A')}',
+                onTap: () async {
+                  final r = await form(
+                    context,
+                    'Имя / Title',
+                    {
+                      'Name': battle.attr('Name'),
+                      'Title': battle.attr('Title'),
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.editBossIdentity(
+                      battle,
+                      r['Name']!,
+                      r['Title']!,
+                    );
+                  }
+                },
+              ),
+              tile(
+                Icons.place,
+                'Location',
+                sub: battle.attr('Location', 'N/A'),
+                onTap: () async {
+                  final r = await form(
+                    context,
+                    'Location',
+                    {
+                      'Location': battle.attr('Location'),
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.changeAttr(
+                      battle,
+                      'Location',
+                      r['Location']!,
+                    );
+                  }
+                },
+              ),
+              tile(
+                Icons.tune,
+                'Battle attributes',
+                sub: '${battle.attributes.length} attrs',
+                onTap: () => go(
+                  context,
+                  AttrsScreen(battle, 'Battle attributes'),
+                ),
+              ),
+              tile(
+                Icons.person_outline,
+                'Warrior Template',
+                sub: warrior?.attr('Template', 'N/A') ?? 'N/A',
+                onTap: () async {
+                  if (warrior == null) {
+                    toast(context, 'Нет Warrior');
+                    return;
+                  }
+
+                  final r = await form(
+                    context,
+                    'Template',
+                    {
+                      'Template': warrior.attr('Template'),
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.changeAttr(
+                      warrior,
+                      'Template',
+                      r['Template']!,
+                    );
+                  }
+                },
+              ),
+              tile(
+                Icons.shield,
+                'Warrior Power / Shields',
+                sub:
+                    '${warrior?.attr('WarriorPower', 'N/A') ?? 'N/A'} / '
+                    '${warrior?.attr('ShieldTotal', '0') ?? '0'}',
+                onTap: () async {
+                  if (warrior == null) {
+                    toast(context, 'Нет Warrior');
+                    return;
+                  }
+
+                  final r = await form(
+                    context,
+                    'Power / Shields',
+                    {
+                      'WarriorPower':
+                          warrior.attr('WarriorPower', '0'),
+                      'ShieldTotal':
+                          warrior.attr('ShieldTotal', '0'),
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.editPowerShields(
+                      warrior,
+                      r['WarriorPower']!,
+                      r['ShieldTotal']!,
+                    );
+                  }
+                },
+              ),
+              tile(
+                Icons.timer,
+                'Rounds / RoundTime',
+                sub:
+                    '${fight?.attr('Rounds', 'N/A') ?? 'N/A'} / '
+                    '${fight?.attr('RoundTime', 'N/A') ?? 'N/A'}s',
+                onTap: () async {
+                  if (fight == null) {
+                    toast(context, 'Нет Fight');
+                    return;
+                  }
+
+                  final r = await form(
+                    context,
+                    'Rounds / RoundTime',
+                    {
+                      'Rounds': fight.attr('Rounds', '0'),
+                      'RoundTime': fight.attr('RoundTime', '999'),
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.editRounds(
+                      fight,
+                      r['Rounds']!,
+                      r['RoundTime']!,
+                    );
+                  }
+                },
+              ),
+              tile(
+                Icons.auto_awesome,
+                'Warrior Perks',
+                onTap: () {
+                  if (warrior == null) {
+                    toast(context, 'Нет Warrior');
+                    return;
+                  }
+
+                  final perks = ctrl.ensurePerks(warrior);
+
+                  go(
+                    context,
+                    PerksScreen(
+                      perks,
+                      rule: false,
+                      title: 'WARRIOR PERKS',
+                    ),
+                  );
+                },
+              ),
+              tile(
+                Icons.rule,
+                'Rules / Player Setup',
+                onTap: () {
+                  final rules = ctrl.ensureRules(battle);
+
+                  if (rules == null) {
+                    toast(context, 'Fight отсутствует.');
+                    return;
+                  }
+
+                  go(context, RulesScreen(rules));
+                },
+              ),
+              tile(
+                Icons.card_giftcard,
+                'Rewards / Currency',
+                onTap: () => go(
+                  context,
+                  RewardsScreen(battle),
+                ),
+              ),
+              tile(
+                Icons.tune,
+                'Warrior attributes',
+                onTap: () {
+                  if (warrior == null) {
+                    toast(context, 'Нет Warrior');
+                    return;
+                  }
+
+                  go(
+                    context,
+                    AttrsScreen(warrior, 'Warrior attributes'),
+                  );
+                },
+              ),
+              tile(
+                Icons.code,
+                'Полный XML Battle',
+                onTap: () => go(
+                  context,
+                  XmlViewScreen(battle),
+                ),
+              ),
             ],
           ),
         );
@@ -1261,7 +2184,9 @@ class BossScreen extends StatelessWidget {
 
 class AttrsScreen extends StatelessWidget {
   final XmlElement el;
+
   final String title;
+
   const AttrsScreen(this.el, this.title, {super.key});
 
   @override
@@ -1271,16 +2196,35 @@ class AttrsScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         child: const Icon(Icons.add),
         onPressed: () async {
-          final r = await form(context, 'Добавить / изменить', {'Имя атрибута': '', 'Значение': ''});
-          if (r == null || r['Имя атрибута']!.isEmpty) return;
-          ctrl.setAttr(el, r['Имя атрибута']!, r['Значение']!);
+          final r = await form(
+            context,
+            'Добавить / изменить',
+            {
+              'Имя атрибута': '',
+              'Значение': '',
+            },
+          );
+
+          if (r == null || r['Имя атрибута']!.isEmpty) {
+            return;
+          }
+
+          ctrl.setAttr(
+            el,
+            r['Имя атрибута']!,
+            r['Значение']!,
+          );
         },
       ),
       body: ListenableBuilder(
         listenable: ctrl,
         builder: (context, _) {
           final attrs = el.attrMap.entries.toList();
-          if (attrs.isEmpty) return emptyNote('Атрибутов нет.');
+
+          if (attrs.isEmpty) {
+            return emptyNote('Атрибутов нет.');
+          }
+
           return ListView(
             children: [
               for (final e in attrs)
@@ -1288,13 +2232,27 @@ class AttrsScreen extends StatelessWidget {
                   title: Text(e.key),
                   subtitle: Text(e.value),
                   onTap: () async {
-                    final r = await form(context, e.key, {'Значение': e.value});
-                    if (r != null) ctrl.setAttr(el, e.key, r['Значение']!);
+                    final r = await form(
+                      context,
+                      e.key,
+                      {'Значение': e.value},
+                    );
+
+                    if (r != null) {
+                      ctrl.setAttr(
+                        el,
+                        e.key,
+                        r['Значение']!,
+                      );
+                    }
                   },
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () async {
-                      if (await confirm(context, 'Удалить ${e.key}?')) {
+                      if (await confirm(
+                        context,
+                        'Удалить ${e.key}?',
+                      )) {
                         ctrl.removeAttr(el, e.key);
                       }
                     },
@@ -1310,58 +2268,124 @@ class AttrsScreen extends StatelessWidget {
 }
 
 // ============================================================
-// PERKS (warrior perks и rule-perks)
+// PERKS
 // ============================================================
 
 class PerksScreen extends StatelessWidget {
   final XmlElement parent;
+
   final bool rule;
+
   final String title;
-  const PerksScreen(this.parent, {required this.rule, required this.title, super.key});
+
+  const PerksScreen(
+    this.parent, {
+    required this.rule,
+    required this.title,
+    super.key,
+  });
 
   Future<void> _preset(BuildContext context) async {
     final keys = presetPerks.keys.toList();
-    final i = await pick(context, 'PRESET PERKS', [
-      for (final k in keys) '${presetPerks[k]!.$1}\n${presetPerks[k]!.$2}',
-    ]);
-    if (i != null) ctrl.addPresetPerk(parent, keys[i]);
+
+    final i = await pick(
+      context,
+      'PRESET PERKS',
+      [
+        for (final k in keys)
+          '${presetPerks[k]!.$1}\n${presetPerks[k]!.$2}',
+      ],
+    );
+
+    if (i != null) {
+      ctrl.addPresetPerk(parent, keys[i]);
+    }
   }
 
   Future<void> _custom(BuildContext context) async {
     final r = await form(
       context,
       rule ? 'Новый Rule-Perk' : 'Новый Perk',
-      rule ? {'Name': '', 'ApplyTo': 'Player'} : {'Name': ''},
+      rule
+          ? {'Name': '', 'ApplyTo': 'Player'}
+          : {'Name': ''},
     );
+
     if (r == null || r['Name']!.isEmpty) return;
+
     if (!context.mounted) return;
-    final addSet = await confirm(context, 'Добавить <Set>?');
-    final apply = rule && r['ApplyTo']!.isNotEmpty ? r['ApplyTo'] : null;
-    ctrl.addCustomPerk(parent, r['Name']!, setAttrs: addSet ? {} : null, applyTo: apply);
+
+    final addSet = await confirm(
+      context,
+      'Добавить <Set>?',
+    );
+
+    final apply = rule && r['ApplyTo']!.isNotEmpty
+        ? r['ApplyTo']
+        : null;
+
+    ctrl.addCustomPerk(
+      parent,
+      r['Name']!,
+      setAttrs: addSet ? {} : null,
+      applyTo: apply,
+    );
   }
 
-  Future<void> _edit(BuildContext context, XmlElement p) async {
-    final i = await pick(context, p.attr('Name', '?'), [
-      rule ? 'Name / ApplyTo' : 'Name',
-      'Set атрибуты',
-      'Удалить',
-    ]);
+  Future<void> _edit(
+    BuildContext context,
+    XmlElement p,
+  ) async {
+    final i = await pick(
+      context,
+      p.attr('Name', '?'),
+      [
+        rule ? 'Name / ApplyTo' : 'Name',
+        'Set атрибуты',
+        'Удалить',
+      ],
+    );
+
     if (i == null || !context.mounted) return;
+
     if (i == 0) {
       final r = await form(
         context,
         'Perk',
         rule
-            ? {'Name': p.attr('Name'), 'ApplyTo': p.attr('ApplyTo')}
-            : {'Name': p.attr('Name')},
-        hint: rule ? 'Пустой ApplyTo — удалить атрибут' : '',
+            ? {
+                'Name': p.attr('Name'),
+                'ApplyTo': p.attr('ApplyTo'),
+              }
+            : {
+                'Name': p.attr('Name'),
+              },
+        hint: rule
+            ? 'Пустой ApplyTo — удалить атрибут'
+            : '',
       );
-      if (r != null) ctrl.editPerk(p, name: r['Name'], applyTo: rule ? r['ApplyTo'] : null);
+
+      if (r != null) {
+        ctrl.editPerk(
+          p,
+          name: r['Name'],
+          applyTo: rule ? r['ApplyTo'] : null,
+        );
+      }
     } else if (i == 1) {
       final set = ctrl.ensureSetNode(p);
-      go(context, AttrsScreen(set, '${p.attr('Name', '?')} <Set>'));
+
+      go(
+        context,
+        AttrsScreen(
+          set,
+          '${p.attr('Name', '?')} <Set>',
+        ),
+      );
     } else {
-      if (await confirm(context, 'Удалить Perk?')) ctrl.removeChild(p);
+      if (await confirm(context, 'Удалить Perk?')) {
+        ctrl.removeChild(p);
+      }
     }
   }
 
@@ -1388,15 +2412,21 @@ class PerksScreen extends StatelessWidget {
         listenable: ctrl,
         builder: (context, _) {
           final items = parent.kids('Perk').toList();
-          if (items.isEmpty) return emptyNote('Perks отсутствуют.');
+
+          if (items.isEmpty) {
+            return emptyNote('Perks отсутствуют.');
+          }
+
           return ListView(
             children: [
               for (final p in items)
                 ListTile(
                   title: Text(p.attr('Name', '?')),
                   subtitle: Text([
-                    if (p.getAttribute('ApplyTo') != null) 'ApplyTo=${p.attr('ApplyTo')}',
-                    if (p.kid('Set') != null) p.kid('Set')!.attrMap.toString(),
+                    if (p.getAttribute('ApplyTo') != null)
+                      'ApplyTo=${p.attr('ApplyTo')}',
+                    if (p.kid('Set') != null)
+                      p.kid('Set')!.attrMap.toString(),
                   ].join('   ')),
                   onTap: () => _edit(context, p),
                 ),
@@ -1414,6 +2444,7 @@ class PerksScreen extends StatelessWidget {
 
 class RulesScreen extends StatelessWidget {
   final XmlElement rules;
+
   const RulesScreen(this.rules, {super.key});
 
   @override
@@ -1422,42 +2453,94 @@ class RulesScreen extends StatelessWidget {
       listenable: ctrl,
       builder: (context, _) {
         final avatar = rules.kid('Avatar');
+
         final cname = rules.kid('Name');
+
         return Scaffold(
-          appBar: AppBar(title: const Text('RULES / PLAYER SETUP')),
+          appBar: AppBar(
+            title: const Text('RULES / PLAYER SETUP'),
+          ),
           body: ListView(
             children: [
-              tile(Icons.face, 'Avatar / Name',
-                  sub: 'Avatar: ${avatar?.attr('Name') ?? '—'}   Name: ${cname?.attr('Name') ?? '—'}',
-                  onTap: () async {
-                final r = await form(
-                  context,
-                  'Avatar / Character Name',
-                  {'Avatar Name': avatar?.attr('Name') ?? '', 'Character Name': cname?.attr('Name') ?? ''},
-                  hint: 'Пустое поле — удалить элемент',
-                );
-                if (r != null) ctrl.editAvatarName(rules, r['Avatar Name']!, r['Character Name']!);
-              }),
-              tile(Icons.checkroom, 'Экипировка Player — EquipItem',
-                  sub: '${rules.kids('EquipItem').length}',
-                  onTap: () => go(context, EquipScreen(rules))),
-              tile(Icons.auto_awesome, 'Rule-Perks',
-                  sub: '${rules.kids('Perk').length}',
-                  onTap: () => go(context, PerksScreen(rules, rule: true, title: 'RULE-PERKS'))),
-              tile(Icons.rule, 'ComplexRules',
-                  sub: '${rules.kids('ComplexRule').length}',
-                  onTap: () => go(context, ComplexRulesScreen(rules))),
-              tile(Icons.account_tree, 'RulesWithConditions',
-                  sub: '${rules.kids('RulesWithConditions').length}',
-                  onTap: () => go(context, ConditionsScreen(rules))),
-              tile(Icons.delete_sweep, 'Очистить ВСЕ пользовательские Rules', onTap: () async {
-                if (await confirm(
+              tile(
+                Icons.face,
+                'Avatar / Name',
+                sub:
+                    'Avatar: ${avatar?.attr('Name') ?? '—'}   '
+                    'Name: ${cname?.attr('Name') ?? '—'}',
+                onTap: () async {
+                  final r = await form(
                     context,
-                    'Будут удалены: Avatar, Name, EquipItem, Perk, ComplexRule, '
-                    'RulesWithConditions. Продолжить?')) {
-                  ctrl.clearUserRules(rules);
-                }
-              }),
+                    'Avatar / Character Name',
+                    {
+                      'Avatar Name': avatar?.attr('Name') ?? '',
+                      'Character Name': cname?.attr('Name') ?? '',
+                    },
+                    hint: 'Пустое поле — удалить элемент',
+                  );
+
+                  if (r != null) {
+                    ctrl.editAvatarName(
+                      rules,
+                      r['Avatar Name']!,
+                      r['Character Name']!,
+                    );
+                  }
+                },
+              ),
+              tile(
+                Icons.checkroom,
+                'Экипировка Player — EquipItem',
+                sub: '${rules.kids('EquipItem').length}',
+                onTap: () => go(
+                  context,
+                  EquipScreen(rules),
+                ),
+              ),
+              tile(
+                Icons.auto_awesome,
+                'Rule-Perks',
+                sub: '${rules.kids('Perk').length}',
+                onTap: () => go(
+                  context,
+                  PerksScreen(
+                    rules,
+                    rule: true,
+                    title: 'RULE-PERKS',
+                  ),
+                ),
+              ),
+              tile(
+                Icons.rule,
+                'ComplexRules',
+                sub: '${rules.kids('ComplexRule').length}',
+                onTap: () => go(
+                  context,
+                  ComplexRulesScreen(rules),
+                ),
+              ),
+              tile(
+                Icons.account_tree,
+                'RulesWithConditions',
+                sub: '${rules.kids('RulesWithConditions').length}',
+                onTap: () => go(
+                  context,
+                  ConditionsScreen(rules),
+                ),
+              ),
+              tile(
+                Icons.delete_sweep,
+                'Очистить ВСЕ пользовательские Rules',
+                onTap: () async {
+                  if (await confirm(
+                    context,
+                    'Будут удалены: Avatar, Name, EquipItem, Perk, '
+                    'ComplexRule, RulesWithConditions. Продолжить?',
+                  )) {
+                    ctrl.clearUserRules(rules);
+                  }
+                },
+              ),
             ],
           ),
         );
@@ -1466,10 +2549,13 @@ class RulesScreen extends StatelessWidget {
   }
 }
 
-// ---------------- Equipment ----------------
+// ============================================================
+// EQUIPMENT
+// ============================================================
 
 class EquipScreen extends StatelessWidget {
   final XmlElement rules;
+
   const EquipScreen(this.rules, {super.key});
 
   @override
@@ -1485,12 +2571,23 @@ class EquipScreen extends StatelessWidget {
               final r = await form(
                 context,
                 'Быстрый комплект Player',
-                {'Items': '', 'ApplyTo': 'Player'},
+                {
+                  'Items': '',
+                  'ApplyTo': 'Player',
+                },
                 hint: 'Предметы через пробел, например:\n'
-                    'WEAPON_INDIA_24 BODY_WOMAN HELM_CROWN_OF_NIGHT RANGED_IND21_KUNAI MAGIC_INDIA_24',
+                    'WEAPON_INDIA_24 BODY_WOMAN HELM_CROWN_OF_NIGHT '
+                    'RANGED_IND21_KUNAI MAGIC_INDIA_24',
               );
+
               if (r != null) {
-                ctrl.quickEquipment(rules, r['Items']!, r['ApplyTo']!.isEmpty ? 'Player' : r['ApplyTo']!);
+                ctrl.quickEquipment(
+                  rules,
+                  r['Items']!,
+                  r['ApplyTo']!.isEmpty
+                      ? 'Player'
+                      : r['ApplyTo']!,
+                );
               }
             },
           ),
@@ -1498,9 +2595,26 @@ class EquipScreen extends StatelessWidget {
             tooltip: 'Добавить',
             icon: const Icon(Icons.add),
             onPressed: () async {
-              final r = await form(context, 'Добавить EquipItem', {'Item Name': '', 'ApplyTo': 'Player'});
-              if (r == null || r['Item Name']!.isEmpty) return;
-              ctrl.addEquipItem(rules, r['Item Name']!, r['ApplyTo']!.isEmpty ? 'Player' : r['ApplyTo']!);
+              final r = await form(
+                context,
+                'Добавить EquipItem',
+                {
+                  'Item Name': '',
+                  'ApplyTo': 'Player',
+                },
+              );
+
+              if (r == null || r['Item Name']!.isEmpty) {
+                return;
+              }
+
+              ctrl.addEquipItem(
+                rules,
+                r['Item Name']!,
+                r['ApplyTo']!.isEmpty
+                    ? 'Player'
+                    : r['ApplyTo']!,
+              );
             },
           ),
         ],
@@ -1509,20 +2623,35 @@ class EquipScreen extends StatelessWidget {
         listenable: ctrl,
         builder: (context, _) {
           final items = rules.kids('EquipItem').toList();
-          if (items.isEmpty) return emptyNote('EquipItem отсутствуют.');
+
+          if (items.isEmpty) {
+            return emptyNote('EquipItem отсутствуют.');
+          }
+
           return ListView(
             children: [
               for (final it in items)
                 ListTile(
                   title: Text(it.attr('Name', '?')),
-                  subtitle: Text('ApplyTo=${it.attr('ApplyTo', '—')}'),
+                  subtitle: Text(
+                    'ApplyTo=${it.attr('ApplyTo', '—')}',
+                  ),
                   onTap: () async {
-                    final r = await form(context, 'EquipItem', {
-                      'Name': it.attr('Name'),
-                      'ApplyTo': it.attr('ApplyTo', 'Player'),
-                    });
+                    final r = await form(
+                      context,
+                      'EquipItem',
+                      {
+                        'Name': it.attr('Name'),
+                        'ApplyTo': it.attr('ApplyTo', 'Player'),
+                      },
+                    );
+
                     if (r != null && r['Name']!.isNotEmpty) {
-                      ctrl.editEquipItem(it, r['Name']!, r['ApplyTo']!);
+                      ctrl.editEquipItem(
+                        it,
+                        r['Name']!,
+                        r['ApplyTo']!,
+                      );
                     }
                   },
                   trailing: IconButton(
@@ -1538,10 +2667,13 @@ class EquipScreen extends StatelessWidget {
   }
 }
 
-// ---------------- ComplexRules ----------------
+// ============================================================
+// COMPLEX RULES
+// ============================================================
 
 class ComplexRulesScreen extends StatelessWidget {
   final XmlElement rules;
+
   const ComplexRulesScreen(this.rules, {super.key});
 
   @override
@@ -1555,10 +2687,22 @@ class ComplexRulesScreen extends StatelessWidget {
             icon: const Icon(Icons.playlist_add),
             onPressed: () async {
               final keys = presetRules.keys.toList();
-              final i = await pick(context, 'COMPLEX RULE PRESETS', [
-                for (final k in keys) '${presetRules[k]!.$1}  →  ${presetRules[k]!.$3}',
-              ]);
-              if (i != null) ctrl.addComplexRulePreset(rules, keys[i]);
+
+              final i = await pick(
+                context,
+                'COMPLEX RULE PRESETS',
+                [
+                  for (final k in keys)
+                    '${presetRules[k]!.$1} → ${presetRules[k]!.$3}',
+                ],
+              );
+
+              if (i != null) {
+                ctrl.addComplexRulePreset(
+                  rules,
+                  keys[i],
+                );
+              }
             },
           ),
         ],
@@ -1567,18 +2711,36 @@ class ComplexRulesScreen extends StatelessWidget {
         listenable: ctrl,
         builder: (context, _) {
           final list = rules.kids('ComplexRule').toList();
-          if (list.isEmpty) return emptyNote('ComplexRule нет.');
+
+          if (list.isEmpty) {
+            return emptyNote('ComplexRule нет.');
+          }
+
           return ListView(
             children: [
               for (final r in list)
                 ListTile(
-                  title: Text(r.kid('Description')?.attr('Alias', '?') ?? '?'),
-                  subtitle: Text(ctrl.complexRuleChildren(r).map((e) => e.name.local).join(', ')),
-                  onTap: () => go(context, ComplexRuleScreen(r)),
+                  title: Text(
+                    r.kid('Description')?.attr('Alias', '?') ?? '?',
+                  ),
+                  subtitle: Text(
+                    ctrl.complexRuleChildren(r)
+                        .map((e) => e.name.local)
+                        .join(', '),
+                  ),
+                  onTap: () => go(
+                    context,
+                    ComplexRuleScreen(r),
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () async {
-                      if (await confirm(context, 'Удалить ComplexRule?')) ctrl.removeChild(r);
+                      if (await confirm(
+                        context,
+                        'Удалить ComplexRule?',
+                      )) {
+                        ctrl.removeChild(r);
+                      }
                     },
                   ),
                 ),
@@ -1592,44 +2754,92 @@ class ComplexRulesScreen extends StatelessWidget {
 
 class ComplexRuleScreen extends StatelessWidget {
   final XmlElement rule;
+
   const ComplexRuleScreen(this.rule, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('COMPLEX RULE')),
+      appBar: AppBar(
+        title: const Text('COMPLEX RULE'),
+      ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Добавить дочерний XML-узел',
         child: const Icon(Icons.add),
         onPressed: () async {
-          final r = await form(context, 'Добавить дочерний узел', {'Имя XML-узла': ''});
-          if (r == null || r['Имя XML-узла']!.isEmpty) return;
-          final child = ctrl.addChild(rule, r['Имя XML-узла']!);
-          if (context.mounted) go(context, AttrsScreen(child, child.name.local));
+          final r = await form(
+            context,
+            'Добавить дочерний узел',
+            {'Имя XML-узла': ''},
+          );
+
+          if (r == null || r['Имя XML-узла']!.isEmpty) {
+            return;
+          }
+
+          final child = ctrl.addChild(
+            rule,
+            r['Имя XML-узла']!,
+          );
+
+          if (context.mounted) {
+            go(
+              context,
+              AttrsScreen(child, child.name.local),
+            );
+          }
         },
       ),
       body: ListenableBuilder(
         listenable: ctrl,
         builder: (context, _) {
           final children = ctrl.complexRuleChildren(rule);
+
           return ListView(
             children: [
-              tile(Icons.label, 'Alias',
-                  sub: rule.kid('Description')?.attr('Alias', '') ?? '', onTap: () async {
-                final r = await form(context, 'Alias', {'Alias': rule.kid('Description')?.attr('Alias', '') ?? ''});
-                if (r != null) ctrl.setComplexRuleAlias(rule, r['Alias']!);
-              }),
+              tile(
+                Icons.label,
+                'Alias',
+                sub: rule.kid('Description')?.attr('Alias', '') ?? '',
+                onTap: () async {
+                  final r = await form(
+                    context,
+                    'Alias',
+                    {
+                      'Alias': rule.kid('Description')
+                              ?.attr('Alias', '') ??
+                          '',
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.setComplexRuleAlias(
+                      rule,
+                      r['Alias']!,
+                    );
+                  }
+                },
+              ),
               const Divider(),
-              if (children.isEmpty) emptyNote('Дочерних узлов нет.'),
+              if (children.isEmpty)
+                emptyNote('Дочерних узлов нет.'),
               for (final ch in children)
                 ListTile(
                   title: Text(ch.name.local),
                   subtitle: Text(ch.attrMap.toString()),
-                  onTap: () => go(context, AttrsScreen(ch, ch.name.local)),
+                  onTap: () => go(
+                    context,
+                    AttrsScreen(ch, ch.name.local),
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () async {
-                      if (await confirm(context, 'Удалить ${ch.name.local}?')) ctrl.removeChild(ch);
+                      if (await confirm(
+                        context,
+                        'Удалить ${ch.name.local}?',
+                      )) {
+                        ctrl.removeChild(ch);
+                      }
                     },
                   ),
                 ),
@@ -1642,10 +2852,13 @@ class ComplexRuleScreen extends StatelessWidget {
   }
 }
 
-// ---------------- RulesWithConditions ----------------
+// ============================================================
+// RULES WITH CONDITIONS
+// ============================================================
 
 class ConditionsScreen extends StatelessWidget {
   final XmlElement rules;
+
   const ConditionsScreen(this.rules, {super.key});
 
   @override
@@ -1657,7 +2870,9 @@ class ConditionsScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Создать',
             icon: const Icon(Icons.add),
-            onPressed: () => ctrl.createRulesWithConditions(rules),
+            onPressed: () {
+              ctrl.createRulesWithConditions(rules);
+            },
           ),
         ],
       ),
@@ -1665,24 +2880,36 @@ class ConditionsScreen extends StatelessWidget {
         listenable: ctrl,
         builder: (context, _) {
           final ws = rules.kids('RulesWithConditions').toList();
-          if (ws.isEmpty) return emptyNote('Блоков нет.');
+
+          if (ws.isEmpty) {
+            return emptyNote('Блоков нет.');
+          }
+
           return ListView(
             children: [
               for (var i = 0; i < ws.length; i++)
                 ListTile(
                   title: Text('Блок ${i + 1}'),
                   subtitle: Text(
-                      'Conditions=${ws[i].kid('Conditions')?.childElements.length ?? 0}   '
-                      'Rules=${ws[i].kid('RuleList')?.childElements.length ?? 0}'),
+                    'Conditions=${ws[i].kid('Conditions')?.childElements.length ?? 0} '
+                    'Rules=${ws[i].kid('RuleList')?.childElements.length ?? 0}',
+                  ),
                   onTap: () {
                     ctrl.ensureConditions(ws[i]);
                     ctrl.ensureRuleList(ws[i]);
-                    go(context, ConditionEditorScreen(ws[i]));
+
+                    go(
+                      context,
+                      ConditionEditorScreen(ws[i]),
+                    );
                   },
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () async {
-                      if (await confirm(context, 'Удалить RulesWithConditions?')) {
+                      if (await confirm(
+                        context,
+                        'Удалить RulesWithConditions?',
+                      )) {
                         ctrl.removeChild(ws[i]);
                       }
                     },
@@ -1698,11 +2925,19 @@ class ConditionsScreen extends StatelessWidget {
 
 class ConditionEditorScreen extends StatelessWidget {
   final XmlElement wrapper;
+
   const ConditionEditorScreen(this.wrapper, {super.key});
 
-  List<Widget> _section(BuildContext context, String title, XmlElement? parent, String hintTag) {
+  List<Widget> _section(
+    BuildContext context,
+    String title,
+    XmlElement? parent,
+    String hintTag,
+  ) {
     if (parent == null) return [];
+
     final items = parent.childElements.toList();
+
     return [
       ListTile(
         tileColor: Colors.white10,
@@ -1710,10 +2945,30 @@ class ConditionEditorScreen extends StatelessWidget {
         trailing: IconButton(
           icon: const Icon(Icons.add),
           onPressed: () async {
-            final r = await form(context, 'Tag', {'Tag': hintTag});
-            if (r == null || r['Tag']!.isEmpty) return;
-            final child = ctrl.addChild(parent, r['Tag']!);
-            if (context.mounted) go(context, AttrsScreen(child, '$title / ${child.name.local}'));
+            final r = await form(
+              context,
+              'Tag',
+              {'Tag': hintTag},
+            );
+
+            if (r == null || r['Tag']!.isEmpty) {
+              return;
+            }
+
+            final child = ctrl.addChild(
+              parent,
+              r['Tag']!,
+            );
+
+            if (context.mounted) {
+              go(
+                context,
+                AttrsScreen(
+                  child,
+                  '$title / ${child.name.local}',
+                ),
+              );
+            }
           },
         ),
       ),
@@ -1721,7 +2976,10 @@ class ConditionEditorScreen extends StatelessWidget {
         ListTile(
           title: Text(it.name.local),
           subtitle: Text(it.attrMap.toString()),
-          onTap: () => go(context, AttrsScreen(it, it.name.local)),
+          onTap: () => go(
+            context,
+            AttrsScreen(it, it.name.local),
+          ),
           trailing: IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () => ctrl.removeChild(it),
@@ -1733,15 +2991,29 @@ class ConditionEditorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('CONDITIONS')),
+      appBar: AppBar(
+        title: const Text('CONDITIONS'),
+      ),
       body: ListenableBuilder(
         listenable: ctrl,
-        builder: (context, _) => ListView(
-          children: [
-            ..._section(context, 'Conditions', wrapper.kid('Conditions'), 'Equal'),
-            ..._section(context, 'RuleList', wrapper.kid('RuleList'), 'NoButton'),
-          ],
-        ),
+        builder: (context, _) {
+          return ListView(
+            children: [
+              ..._section(
+                context,
+                'Conditions',
+                wrapper.kid('Conditions'),
+                'Equal',
+              ),
+              ..._section(
+                context,
+                'RuleList',
+                wrapper.kid('RuleList'),
+                'NoButton',
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1753,6 +3025,7 @@ class ConditionEditorScreen extends StatelessWidget {
 
 class RewardsScreen extends StatelessWidget {
   final XmlElement battle;
+
   const RewardsScreen(this.battle, {super.key});
 
   @override
@@ -1766,7 +3039,11 @@ class RewardsScreen extends StatelessWidget {
             icon: const Icon(Icons.add),
             onPressed: () {
               final r = ctrl.createReward(battle);
-              go(context, RewardScreen(r));
+
+              go(
+                context,
+                RewardScreen(r),
+              );
             },
           ),
         ],
@@ -1775,22 +3052,39 @@ class RewardsScreen extends StatelessWidget {
         listenable: ctrl,
         builder: (context, _) {
           final rewards = battle.kids('Reward').toList();
-          if (rewards.isEmpty) return emptyNote('Rewards нет.');
+
+          if (rewards.isEmpty) {
+            return emptyNote('Rewards нет.');
+          }
+
           return ListView(
             children: [
               for (var i = 0; i < rewards.length; i++)
                 ListTile(
                   title: Text('Reward ${i + 1}'),
-                  subtitle: Text('PrizeBase=${rewards[i].attr('PrizeBase', '—')} '
-                      'Exp=${rewards[i].attr('Exp', '—')} '
-                      'Bonus=${rewards[i].attr('Bonus', '—')}\n'
-                      '${rewards[i].kids('Currency').map((c) => '↳ ${c.attr('Name', '?')} = ${c.attr('ExpectedValue', '?')}').join('\n')}'),
+                  subtitle: Text(
+                    'PrizeBase=${rewards[i].attr('PrizeBase', '—')} '
+                    'Exp=${rewards[i].attr('Exp', '—')} '
+                    'Bonus=${rewards[i].attr('Bonus', '—')}\n'
+                    '${rewards[i].kids('Currency').map(
+                          (c) => '↳ ${c.attr('Name', '?')} = '
+                              '${c.attr('ExpectedValue', '?')}',
+                        ).join('\n')}',
+                  ),
                   isThreeLine: true,
-                  onTap: () => go(context, RewardScreen(rewards[i])),
+                  onTap: () => go(
+                    context,
+                    RewardScreen(rewards[i]),
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () async {
-                      if (await confirm(context, 'Удалить Reward?')) ctrl.removeChild(rewards[i]);
+                      if (await confirm(
+                        context,
+                        'Удалить Reward?',
+                      )) {
+                        ctrl.removeChild(rewards[i]);
+                      }
                     },
                   ),
                 ),
@@ -1804,53 +3098,102 @@ class RewardsScreen extends StatelessWidget {
 
 class RewardScreen extends StatelessWidget {
   final XmlElement reward;
+
   const RewardScreen(this.reward, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('REWARD')),
+      appBar: AppBar(
+        title: const Text('REWARD'),
+      ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Добавить Currency',
         child: const Icon(Icons.add),
         onPressed: () async {
-          final r = await form(context, 'Добавить Currency', {'Currency Name': '', 'ExpectedValue': '0'});
-          if (r == null || r['Currency Name']!.isEmpty) return;
-          ctrl.addCurrency(reward, r['Currency Name']!, r['ExpectedValue']!.isEmpty ? '0' : r['ExpectedValue']!);
+          final r = await form(
+            context,
+            'Добавить Currency',
+            {
+              'Currency Name': '',
+              'ExpectedValue': '0',
+            },
+          );
+
+          if (r == null || r['Currency Name']!.isEmpty) {
+            return;
+          }
+
+          ctrl.addCurrency(
+            reward,
+            r['Currency Name']!,
+            r['ExpectedValue']!.isEmpty
+                ? '0'
+                : r['ExpectedValue']!,
+          );
         },
       ),
       body: ListenableBuilder(
         listenable: ctrl,
         builder: (context, _) {
           final cs = reward.kids('Currency').toList();
+
           return ListView(
             children: [
-              tile(Icons.edit, 'PrizeBase / Exp / Bonus',
-                  sub: 'PrizeBase=${reward.attr('PrizeBase', '—')}  '
-                      'Exp=${reward.attr('Exp', '—')}  Bonus=${reward.attr('Bonus', '—')}',
-                  onTap: () async {
-                final r = await form(context, 'Reward', {
-                  'PrizeBase': reward.attr('PrizeBase'),
-                  'Exp': reward.attr('Exp'),
-                  'Bonus': reward.attr('Bonus'),
-                });
-                if (r != null) {
-                  ctrl.editReward(reward,
-                      prizeBase: r['PrizeBase']!, exp: r['Exp']!, bonus: r['Bonus']!);
-                }
-              }),
+              tile(
+                Icons.edit,
+                'PrizeBase / Exp / Bonus',
+                sub:
+                    'PrizeBase=${reward.attr('PrizeBase', '—')}  '
+                    'Exp=${reward.attr('Exp', '—')}  '
+                    'Bonus=${reward.attr('Bonus', '—')}',
+                onTap: () async {
+                  final r = await form(
+                    context,
+                    'Reward',
+                    {
+                      'PrizeBase': reward.attr('PrizeBase'),
+                      'Exp': reward.attr('Exp'),
+                      'Bonus': reward.attr('Bonus'),
+                    },
+                  );
+
+                  if (r != null) {
+                    ctrl.editReward(
+                      reward,
+                      prizeBase: r['PrizeBase']!,
+                      exp: r['Exp']!,
+                      bonus: r['Bonus']!,
+                    );
+                  }
+                },
+              ),
               const Divider(),
-              if (cs.isEmpty) emptyNote('Currency нет.'),
+              if (cs.isEmpty)
+                emptyNote('Currency нет.'),
               for (final c in cs)
                 ListTile(
                   title: Text(c.attr('Name', '?')),
-                  subtitle: Text('ExpectedValue=${c.attr('ExpectedValue', '?')}'),
+                  subtitle: Text(
+                    'ExpectedValue=${c.attr('ExpectedValue', '?')}',
+                  ),
                   onTap: () async {
-                    final r = await form(context, 'Currency', {
-                      'Name': c.attr('Name'),
-                      'ExpectedValue': c.attr('ExpectedValue', '0'),
-                    });
-                    if (r != null) ctrl.editCurrency(c, r['Name']!, r['ExpectedValue']!);
+                    final r = await form(
+                      context,
+                      'Currency',
+                      {
+                        'Name': c.attr('Name'),
+                        'ExpectedValue': c.attr('ExpectedValue', '0'),
+                      },
+                    );
+
+                    if (r != null) {
+                      ctrl.editCurrency(
+                        c,
+                        r['Name']!,
+                        r['ExpectedValue']!,
+                      );
+                    }
                   },
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
