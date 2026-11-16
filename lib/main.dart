@@ -14,6 +14,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:xml/xml.dart';
+import 'package:file_picker/file_picker.dart';
+
 
 // ============================================================
 // CONFIG / PRESETS
@@ -765,16 +767,25 @@ class _StartScreenState extends State<StartScreen> {
   final _path = TextEditingController(text: defaultFilePath);
   bool _busy = false;
 
+  // Метод для выбора файла через системный проводник
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+      );
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _path.text = result.files.single.path!;
+        });
+      }
+    } catch (e) {
+      if (mounted) toast(context, 'Ошибка выбора файла: $e');
+    }
+  }
+
   Future<void> _open() async {
     setState(() => _busy = true);
     try {
-      if (Platform.isAndroid) {
-        var st = await Permission.manageExternalStorage.request();
-        if (!st.isGranted) st = await Permission.storage.request();
-        if (!st.isGranted && mounted) {
-          toast(context, 'Нет доступа к хранилищу — файл может не открыться.');
-        }
-      }
       final c = RaidForgeController(_path.text.trim());
       await c.load();
       ctrl = c;
@@ -795,20 +806,32 @@ class _StartScreenState extends State<StartScreen> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              TextField(
-                controller: _path,
-                decoration: const InputDecoration(
-                  labelText: 'Путь к raid_stages.xml',
-                  border: OutlineInputBorder(),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _path,
+                      decoration: const InputDecoration(
+                        labelText: 'Путь к raid_stages.xml',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Обзор',
+                    icon: const Icon(Icons.folder_open),
+                    onPressed: _busy ? null : _pickFile,
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: _busy ? null : _open,
-                  icon: const Icon(Icons.folder_open),
-                  label: Text(_busy ? 'Загрузка...' : 'Открыть'),
+                  icon: const Icon(Icons.check),
+                  label: Text(_busy ? 'Загрузка...' : 'Открыть файл'),
                 ),
               ),
             ],
@@ -816,6 +839,7 @@ class _StartScreenState extends State<StartScreen> {
         ),
       );
 }
+
 
 // ============================================================
 // HOME
