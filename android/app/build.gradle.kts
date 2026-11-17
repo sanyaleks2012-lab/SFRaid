@@ -20,7 +20,7 @@ configure<ApplicationExtension> {
 
     defaultConfig {
         applicationId = "com.sf2de.raid.raid_forge"
-        minSdk = flutter.minSdkVersion
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         
         // Принудительно устанавливаем targetSdk в 36
         targetSdk = 36
@@ -46,3 +46,7 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+}

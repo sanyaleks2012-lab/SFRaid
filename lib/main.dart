@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:xml/xml.dart';
 import 'package:file_picker/file_picker.dart';
+import 'shizuku_bridge.dart';
 
 // ============================================================
 // STORAGE
@@ -170,6 +171,7 @@ class DiagnosticsResult {
 
 class RaidForgeController extends ChangeNotifier {
   String filePath;
+  final RaidIo io;
 
   late XmlDocument _doc;
 
@@ -177,7 +179,7 @@ class RaidForgeController extends ChangeNotifier {
 
   bool dirty = false;
 
-  RaidForgeController(this.filePath);
+  RaidForgeController(this.filePath, this.io);
 
   XmlElement get root => _doc.rootElement;
 
@@ -188,25 +190,23 @@ class RaidForgeController extends ChangeNotifier {
   // ----------------------------------------------------------
 
   Future<void> load() async {
-    final file = File(filePath);
-
-    if (!await file.exists()) {
-      throw RaidForgeException('Файл не найден:\n$filePath');
-    }
-
-    try {
-      _doc = XmlDocument.parse(await file.readAsString());
-    } on XmlException catch (e) {
-      throw RaidForgeException('XML повреждён:\n$e');
-    } catch (e) {
-      throw RaidForgeException('Ошибка чтения:\n$e');
-    }
-
-    _undoStack.clear();
-    dirty = false;
-
-    notifyListeners();
+  if (!await io.exists(filePath)) {
+    throw RaidForgeException('Файл не найден:\n$filePath');
   }
+
+  try {
+    _doc = XmlDocument.parse(await io.read(filePath));
+  } on XmlException catch (e) {
+    throw RaidForgeException('XML повреждён:\n$e');
+  } catch (e) {
+    throw RaidForgeException('Ошибка чтения:\n$e');
+  }
+
+  _undoStack.clear();
+  dirty = false;
+
+  notifyListeners();
+}
 
   // ----------------------------------------------------------
   // UNDO
@@ -249,54 +249,41 @@ class RaidForgeController extends ChangeNotifier {
   // ----------------------------------------------------------
 
   Future<String?> save() async {
-    if (!dirty) return null;
+  if (!dirty) return null;
 
-    final n = DateTime.now();
+  final n = DateTime.now();
 
-    final ts = '${n.year}${_two(n.month)}${_two(n.day)}_'
-        '${_two(n.hour)}${_two(n.minute)}${_two(n.second)}';
+  final ts = '${n.year}${_two(n.month)}${_two(n.day)}_'
+      '${_two(n.hour)}${_two(n.minute)}${_two(n.second)}';
 
-    final backup = '$filePath.$ts.bak';
+  final backup = '$filePath.$ts.bak';
 
-    final src = File(filePath);
-
-    if (!await src.exists()) {
-      throw RaidForgeException('Исходный файл больше не существует.');
-    }
-
-    await src.copy(backup);
-
-    final xml = _doc.toXmlString(
-      pretty: true,
-      indent: '  ',
+  if (!await io.exists(filePath)) {
+    throw RaidForgeException(
+      'Исходный файл больше не существует.',
     );
-
-    final out = xml.trimLeft().startsWith('<?xml')
-        ? xml
-        : '<?xml version="1.0" encoding="utf-8"?>\n$xml';
-
-    final tmp = File(
-      '${src.parent.path}/.raidforge_${n.microsecondsSinceEpoch}.xml',
-    );
-
-    try {
-      await tmp.writeAsString(out, flush: true);
-
-      await tmp.rename(filePath);
-    } catch (e) {
-      if (await tmp.exists()) {
-        await tmp.delete();
-      }
-
-      rethrow;
-    }
-
-    dirty = false;
-
-    notifyListeners();
-
-    return backup;
   }
+
+  // Создаём резервную копию через выбранный способ доступа.
+  await io.copy(filePath, backup);
+
+  final xml = _doc.toXmlString(
+    pretty: true,
+    indent: '  ',
+  );
+
+  final out = xml.trimLeft().startsWith('<?xml')
+      ? xml
+      : '<?xml version="1.0" encoding="utf-8"?>\n$xml';
+
+  // Запись через RaidIo, включая режим Shizuku.
+  await io.write(filePath, out);
+
+  dirty = false;
+  notifyListeners();
+
+  return backup;
+}
 
   // ----------------------------------------------------------
   // TREE
@@ -1222,6 +1209,14 @@ class RaidForgeApp extends StatelessWidget {
         colorSchemeSeed: Colors.deepPurple,
         brightness: Brightness.dark,
         useMaterial3: true,
+        visualDensity: VisualDensity.standard,
+      ),
+      builder: (context, child) => Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: child,
+        ),
       ),
       home: const StartScreen(),
     );
@@ -1239,51 +1234,97 @@ class StartScreen extends StatefulWidget {
   State<StartScreen> createState() => _StartScreenState();
 }
 
+enum AccessMode { direct, shizuku }
+
 class _StartScreenState extends State<StartScreen> {
   late final TextEditingController _path;
+  final _pkg = TextEditingController(text: 'com.onerdna.sfml');
 
+  AccessMode _mode = AccessMode.direct;
+  ShizukuState _shz = ShizukuState.notInstalled;
+  List<String> _xmlFiles = [];
+  String _xmlFile = 'raid_stages.xml';
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-
-    _path = TextEditingController(
-      text: defaultFilePath,
-    );
+    _path = TextEditingController(text: defaultFilePath);
+    _refreshShizuku();
   }
 
   @override
   void dispose() {
     _path.dispose();
-
+    _pkg.dispose();
     super.dispose();
   }
 
-  // ----------------------------------------------------------
-  // REQUEST STORAGE PERMISSION
-  // ----------------------------------------------------------
+  String get _pkgText => _pkg.text.trim();
 
-  Future<void> _requestPermission() async {
-    final granted = await requestStoragePermission();
+  String get _resolvedPath => _mode == AccessMode.shizuku
+      ? '${gamedataDir(_pkgText)}/$_xmlFile'
+      : _path.text.trim();
 
-    if (!mounted) return;
+  String get _shizukuLabel => switch (_shz) {
+        ShizukuState.notInstalled => 'Shizuku не установлен',
+        ShizukuState.notRunning => 'Shizuku не запущен',
+        ShizukuState.noPermission => 'Нужно разрешение Shizuku',
+        ShizukuState.ready => 'Shizuku готов',
+      };
 
-    if (granted) {
-      toast(context, 'Доступ ко всем файлам разрешён.');
-    } else {
-      toast(
-        context,
-        'Разрешение не выдано. Проверь специальный доступ к файлам.',
-      );
+  Future<void> _refreshShizuku() async {
+    final s = await ShizukuBridge.state();
+    if (mounted) setState(() => _shz = s);
+  }
 
-      await openAppSettings();
+  Future<bool> _ensureShizuku() async {
+    await _refreshShizuku();
+    if (_shz == ShizukuState.noPermission) {
+      await ShizukuBridge.requestPermission();
+      await _refreshShizuku();
+    }
+    if (_shz != ShizukuState.ready && mounted) {
+      toast(context, '$_shizukuLabel. Запусти Shizuku и выдай доступ.');
+    }
+    return _shz == ShizukuState.ready;
+  }
+
+  Future<void> _scanFiles() async {
+    if (!isValidPackage(_pkgText)) {
+      toast(context, 'Некорректное имя пакета.');
+      return;
+    }
+    if (!await _ensureShizuku()) return;
+    try {
+      final all = await ShizukuBridge.list(gamedataDir(_pkgText));
+      final xmls = all.where((f) => f.toLowerCase().endsWith('.xml')).toList()
+        ..sort();
+      if (!mounted) return;
+      setState(() {
+        _xmlFiles = xmls;
+        if (xmls.isNotEmpty && !xmls.contains(_xmlFile)) {
+          _xmlFile = xmls.contains('raid_stages.xml')
+              ? 'raid_stages.xml'
+              : xmls.first;
+        }
+      });
+      if (xmls.isEmpty) toast(context, 'XML в gamedata не найдено.');
+    } catch (e) {
+      if (mounted) toast(context, 'Ошибка чтения папки: $e');
     }
   }
 
-  // ----------------------------------------------------------
-  // PICK FILE
-  // ----------------------------------------------------------
+  Future<void> _requestPermission() async {
+    final granted = await requestStoragePermission();
+    if (!mounted) return;
+    if (granted) {
+      toast(context, 'Доступ ко всем файлам разрешён.');
+    } else {
+      toast(context, 'Разрешение не выдано. Проверь специальный доступ к файлам.');
+      await openAppSettings();
+    }
+  }
 
   Future<void> _pickFile() async {
     try {
@@ -1292,144 +1333,206 @@ class _StartScreenState extends State<StartScreen> {
         allowedExtensions: ['xml'],
         allowMultiple: false,
       );
-
       if (!mounted || result == null) return;
-
       final selected = result.files.single.path;
-
       if (selected == null) {
         toast(context, 'Не удалось получить путь к файлу.');
         return;
       }
-
-      setState(() {
-        _path.text = selected;
-      });
-
-      toast(
-        context,
-        'Файл выбран. Проверь путь перед сохранением.',
-      );
+      setState(() => _path.text = selected);
     } catch (e) {
-      if (mounted) {
-        toast(context, 'Ошибка выбора файла: $e');
-      }
+      if (mounted) toast(context, 'Ошибка выбора файла: $e');
     }
   }
 
-  // ----------------------------------------------------------
-  // OPEN FILE
-  // ----------------------------------------------------------
-
   Future<void> _open() async {
     if (_busy) return;
-
     setState(() => _busy = true);
-
     try {
-      final granted = await requestStoragePermission();
-
-      if (!mounted) return;
-
-      if (!granted) {
-        toast(
-          context,
-          'Сначала разреши приложению доступ ко всем файлам.',
-        );
-
-        await openAppSettings();
-
-        return;
+      final RaidIo io;
+      if (_mode == AccessMode.shizuku) {
+        if (!isValidPackage(_pkgText)) {
+          toast(context, 'Некорректное имя пакета.');
+          return;
+        }
+        if (!await _ensureShizuku()) return;
+        io = ShizukuIo();
+      } else {
+        if (!await requestStoragePermission()) {
+          if (!mounted) return;
+          toast(context, 'Сначала разреши доступ ко всем файлам.');
+          await openAppSettings();
+          return;
+        }
+        io = DirectIo();
       }
-
-      final path = _path.text.trim();
-
+      final path = _resolvedPath;
       if (path.isEmpty) {
-        toast(context, 'Укажи путь к XML-файлу.');
+        if (mounted) toast(context, 'Укажи путь к XML-файлу.');
         return;
       }
-
-      final c = RaidForgeController(path);
-
+      final c = RaidForgeController(path, io);
       await c.load();
-
       if (!mounted) {
         c.dispose();
         return;
       }
-
       ctrl = c;
-
       go(context, const HomeScreen());
     } on RaidForgeException catch (e) {
-      if (mounted) {
-        toast(context, e.message);
-      }
+      if (mounted) toast(context, e.message);
     } catch (e) {
-      if (mounted) {
-        toast(context, 'Ошибка: $e');
-      }
+      if (mounted) toast(context, 'Ошибка: $e');
     } finally {
-      if (mounted) {
-        setState(() => _busy = false);
-      }
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ----------------------------------------------------------
-  // UI
-  // ----------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
+    final shizuku = _mode == AccessMode.shizuku;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('SHADOW FIGHT 2 • RAID FORGE'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _path,
-                    decoration: const InputDecoration(
-                      labelText: 'Путь к raid_stages.xml',
-                      border: OutlineInputBorder(),
-                    ),
+      appBar: AppBar(title: const Text('SF2 • RAID FORGE')),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SegmentedButton<AccessMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: AccessMode.direct,
+                        icon: Icon(Icons.folder),
+                        label: Text('Файлы'),
+                      ),
+                      ButtonSegment(
+                        value: AccessMode.shizuku,
+                        icon: Icon(Icons.adb),
+                        label: Text('Shizuku'),
+                      ),
+                    ],
+                    selected: {_mode},
+                    onSelectionChanged: (s) {
+                      setState(() => _mode = s.first);
+                      if (s.first == AccessMode.shizuku) _refreshShizuku();
+                    },
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  tooltip: 'Обзор',
-                  icon: const Icon(Icons.folder_open),
-                  onPressed: _busy ? null : _pickFile,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _busy ? null : _open,
-                icon: const Icon(Icons.check),
-                label: Text(
-                  _busy ? 'Загрузка...' : 'Открыть файл',
-                ),
+                  const SizedBox(height: 20),
+                  if (!shizuku) ...[
+                    TextField(
+                      controller: _path,
+                      decoration: InputDecoration(
+                        labelText: 'Путь к raid_stages.xml',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: 'Обзор',
+                          icon: const Icon(Icons.folder_open),
+                          onPressed: _busy ? null : _pickFile,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      onPressed: _busy ? null : _requestPermission,
+                      icon: const Icon(Icons.lock_open),
+                      label: const Text('Разрешить доступ к Storage'),
+                    ),
+                  ] else ...[
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        _shz == ShizukuState.ready
+                            ? Icons.check_circle
+                            : Icons.error_outline,
+                        color: _shz == ShizukuState.ready
+                            ? Colors.greenAccent
+                            : Colors.amber,
+                      ),
+                      title: Text(_shizukuLabel),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _refreshShizuku,
+                      ),
+                    ),
+                    if (_shz == ShizukuState.noPermission)
+                      FilledButton.tonal(
+                        onPressed: _ensureShizuku,
+                        child: const Text('Выдать разрешение'),
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pkg,
+                      keyboardType: TextInputType.visiblePassword,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Пакет игры',
+                        hintText: 'com.ggf.sf2',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setState(() => _xmlFiles = []),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _xmlFiles.isEmpty
+                              ? InputDecorator(
+                                  decoration: const InputDecoration(
+                                    labelText: 'Файл',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  child: Text(_xmlFile),
+                                )
+                              : DropdownButtonFormField<String>(
+                                  value: _xmlFile,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Файл',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: [
+                                    for (final f in _xmlFiles)
+                                      DropdownMenuItem(value: f, child: Text(f)),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => _xmlFile = v ?? _xmlFile),
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          tooltip: 'Найти XML в gamedata',
+                          icon: const Icon(Icons.search),
+                          onPressed: _busy ? null : _scanFiles,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      isValidPackage(_pkgText)
+                          ? _resolvedPath
+                          : 'Введи корректное имя пакета',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                    ),
+                    onPressed: _busy ? null : _open,
+                    icon: const Icon(Icons.check),
+                    label: Text(_busy ? 'Загрузка...' : 'Открыть файл'),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _requestPermission,
-                icon: const Icon(Icons.folder_open),
-                label: const Text('Разрешить доступ к Storage'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1440,6 +1543,7 @@ class _StartScreenState extends State<StartScreen> {
 // HOME
 // ============================================================
 
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -1449,7 +1553,6 @@ class HomeScreen extends StatelessWidget {
       listenable: ctrl,
       builder: (context, _) {
         final st = ctrl.statistics();
-
         final zs = ctrl.zones();
 
         return PopScope(
@@ -1474,32 +1577,6 @@ class HomeScreen extends StatelessWidget {
                     : 'RAID FORGE',
               ),
               actions: [
-                IconButton(
-                  tooltip: 'Поиск босса',
-                  icon: const Icon(Icons.search),
-                  onPressed: () => go(
-                    context,
-                    const SearchScreen(),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Отменить (${ctrl.undoCount}/$maxUndo)',
-                  icon: Badge(
-                    isLabelVisible: ctrl.undoCount > 0,
-                    label: Text('${ctrl.undoCount}'),
-                    child: const Icon(Icons.undo),
-                  ),
-                  onPressed: () {
-                    if (!ctrl.undo()) {
-                      toast(context, 'История изменений пуста.');
-                    }
-                  },
-                ),
-                IconButton(
-                  tooltip: 'Сохранить + backup',
-                  icon: const Icon(Icons.save),
-                  onPressed: () => doSave(context),
-                ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
                     if (v == 'diag') {
@@ -1535,39 +1612,11 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
-            floatingActionButton: FloatingActionButton.extended(
-              icon: const Icon(Icons.add),
-              label: const Text('Зона'),
-              onPressed: () async {
-                final r = await form(
-                  context,
-                  'Создание зоны',
-                  {
-                    'Name': '',
-                    'FileName': '',
-                  },
-                );
 
-                if (r == null) return;
+            // ------------------------------------------------
+            // MAIN CONTENT
+            // ------------------------------------------------
 
-                if (r['Name']!.isEmpty ||
-                    r['FileName']!.isEmpty) {
-                  if (context.mounted) {
-                    toast(
-                      context,
-                      'Значение не может быть пустым.',
-                    );
-                  }
-
-                  return;
-                }
-
-                ctrl.createZone(
-                  r['Name']!,
-                  r['FileName']!,
-                );
-              },
-            ),
             body: ListView(
               children: [
                 Padding(
@@ -1593,8 +1642,12 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+
                 const Divider(height: 1),
-                if (zs.isEmpty) emptyNote('Зон нет.'),
+
+                if (zs.isEmpty)
+                  emptyNote('Зон нет.'),
+
                 for (final zone in zs)
                   ListTile(
                     leading: const Icon(Icons.dns),
@@ -1647,8 +1700,102 @@ class HomeScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+
                 const SizedBox(height: 80),
               ],
+            ),
+
+            // ------------------------------------------------
+            // BOTTOM NAVIGATION
+            // ------------------------------------------------
+
+            bottomNavigationBar: BottomAppBar(
+              height: 64,
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Поиск босса',
+                    icon: const Icon(Icons.search),
+                    onPressed: () {
+                      go(context, const SearchScreen());
+                    },
+                  ),
+
+                  IconButton(
+                    tooltip: 'Отменить (${ctrl.undoCount}/$maxUndo)',
+                    icon: Badge(
+                      isLabelVisible: ctrl.undoCount > 0,
+                      label: Text('${ctrl.undoCount}'),
+                      child: const Icon(Icons.undo),
+                    ),
+                    onPressed: () {
+                      if (!ctrl.undo()) {
+                        toast(
+                          context,
+                          'История изменений пуста.',
+                        );
+                      }
+                    },
+                  ),
+
+                  IconButton(
+                    tooltip: 'Сохранить + backup',
+                    icon: const Icon(Icons.save),
+                    onPressed: () => doSave(context),
+                  ),
+
+                  const Spacer(),
+
+                  Text(
+                    ctrl.dirty ? 'Есть изменения' : 'Сохранено',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: ctrl.dirty
+                          ? Colors.amber
+                          : Colors.grey,
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+                ],
+              ),
+            ),
+
+            // ------------------------------------------------
+            // CREATE ZONE
+            // ------------------------------------------------
+
+            floatingActionButton: FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('Зона'),
+              onPressed: () async {
+                final r = await form(
+                  context,
+                  'Создание зоны',
+                  {
+                    'Name': '',
+                    'FileName': '',
+                  },
+                );
+
+                if (r == null) return;
+
+                if (r['Name']!.isEmpty ||
+                    r['FileName']!.isEmpty) {
+                  if (context.mounted) {
+                    toast(
+                      context,
+                      'Значение не может быть пустым.',
+                    );
+                  }
+                  return;
+                }
+
+                ctrl.createZone(
+                  r['Name']!,
+                  r['FileName']!,
+                );
+              },
             ),
           ),
         );
@@ -1656,6 +1803,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+
 
 // ============================================================
 // SEARCH
