@@ -94,6 +94,37 @@ const Set<String> removableRuleTags = {
 };
 
 // ============================================================
+// SUPPORTED FILES (только эти 3 файла можно загрузить)
+// ============================================================
+
+enum XmlKind {
+  raid('raid_stages_default.xml', 'Raid stages'),
+  quests('quests.xml', 'Quests'),
+  stages('stages.xml', 'Stages');
+
+  final String fileName;
+  final String title;
+
+  const XmlKind(this.fileName, this.title);
+
+  bool get isQuests => this == XmlKind.quests;
+
+  /// Определяет тип по имени файла (строгое совпадение).
+  static XmlKind? fromPath(String path) {
+    final base = path.split(RegExp(r'[\\/]')).last.trim().toLowerCase();
+
+    for (final k in XmlKind.values) {
+      if (k.fileName == base) return k;
+    }
+
+    return null;
+  }
+
+  static String get allowedList =>
+      XmlKind.values.map((k) => k.fileName).join(', ');
+}
+
+// ============================================================
 // XML HELPERS
 // ============================================================
 
@@ -154,7 +185,10 @@ class Stats {
       equipItems = 0,
       rulePerks = 0,
       currencies = 0,
-      conditions = 0;
+      conditions = 0,
+      quests = 0,
+      dojos = 0,
+      includes = 0;
 }
 
 class DiagnosticsResult {
@@ -166,12 +200,123 @@ class DiagnosticsResult {
 }
 
 // ============================================================
+// QUESTS: DOJO MODEL / TEMPLATES
+// ============================================================
+
+/// Одно додзё в «Dojo Changer» из quests.xml.
+///
+/// Логика файла:
+///  • Page-квест  (Events/Activate, Dialog Title="DojoChangerTitle") —
+///    страница листалки: кнопки NEXT / SELECT / BACK, текст Line.
+///  • Load-квест  (Events/Activate, ChangeDojoLocation) — срабатывает по
+///    SELECT: ставит DojoLoader, меняет локацию, ChangeScene в Dojo.
+///  • Стартовый If в DojoChanger_LoadSelectedDojo (или отдельном квесте)
+///    восстанавливает выбранное додзё при запуске игры.
+class DojoEntry {
+  final XmlElement page;
+  final XmlElement? load;
+  final XmlElement? startupIf;
+  final String pageAction;
+  final String loadAction;
+  final String labelKey;
+  final String location;
+  final String loader;
+  final bool linked;
+
+  const DojoEntry({
+    required this.page,
+    required this.load,
+    required this.startupIf,
+    required this.pageAction,
+    required this.loadAction,
+    required this.labelKey,
+    required this.location,
+    required this.loader,
+    required this.linked,
+  });
+
+  String get title => labelKey.isEmpty ? pageAction : labelKey;
+}
+
+XmlElement parseFragment(String xml) {
+  try {
+    return XmlDocument.parse(xml).rootElement.copy();
+  } on XmlException catch (e) {
+    throw RaidForgeException('XML некорректен:\n$e');
+  }
+}
+
+const String _dojoPageTemplate = r'''
+<Quest Name="">
+  <Events>
+    <Activate />
+  </Events>
+  <Conditions>
+    <Equal Value1="_$ActionID" Value2="" />
+  </Conditions>
+  <Actions>
+    <Dialog Type="Multiline" Title="DojoChangerTitle" Image="man_random_small">
+      <Line Text="" />
+      <Button Type="Right" Color="Beige" Text="NEXT">
+        <Activate ActionID="" />
+      </Button>
+      <Button Type="Middle" Color="Green" Text="SELECT">
+        <Activate ActionID="" />
+      </Button>
+      <Button Type="Left" Color="Red" Text="BACK" />
+      <CheckBox Text="ShowIntro" InitialValue="_ShowIntroVideo">
+        <On>
+          <SetVariable Scope="Users" Name="ShowIntroVideo" Value="1" />
+        </On>
+        <Off>
+          <SetVariable Scope="Users" Name="ShowIntroVideo" Value="0" />
+        </Off>
+      </CheckBox>
+    </Dialog>
+  </Actions>
+</Quest>''';
+
+const String _dojoLoadTemplate = r'''
+<Quest Name="">
+  <Events>
+    <Activate />
+  </Events>
+  <Conditions>
+    <Equal Value1="_$ActionID" Value2="" />
+  </Conditions>
+  <Actions>
+    <ChangeDojoLocation Name="" />
+    <ChangeScene Destination="Dojo" />
+    <SetVariable Scope="Users" Name="DojoLoader" Value="" />
+  </Actions>
+</Quest>''';
+
+const String _dojoStartupQuestTemplate = '''
+<Quest Name="DojoChanger_LoadSelectedDojo" Priority="999">
+  <Events>
+    <ApplicationStart />
+  </Events>
+  <Actions />
+</Quest>''';
+
+const String _dojoStartupIfTemplate = '''
+<If>
+  <Conditions>
+    <Equal Value1="_DojoLoader" Value2="" />
+  </Conditions>
+  <Then>
+    <ChangeDojoLocation Name="" />
+  </Then>
+</If>''';
+
+// ============================================================
 // CONTROLLER
 // ============================================================
 
 class RaidForgeController extends ChangeNotifier {
   String filePath;
   final RaidIo io;
+  final XmlKind kind;
 
   late XmlDocument _doc;
 
@@ -179,7 +324,7 @@ class RaidForgeController extends ChangeNotifier {
 
   bool dirty = false;
 
-  RaidForgeController(this.filePath, this.io);
+  RaidForgeController(this.filePath, this.io, [this.kind = XmlKind.raid]);
 
   XmlElement get root => _doc.rootElement;
 
@@ -326,6 +471,13 @@ class RaidForgeController extends ChangeNotifier {
 
   Stats statistics() {
     final s = Stats();
+
+    if (kind.isQuests) {
+      s.quests = quests().length;
+      s.dojos = dojos().length;
+      s.includes = root.kids('Include').length;
+      return s;
+    }
 
     final zs = zones();
 
@@ -963,10 +1115,562 @@ class RaidForgeController extends ChangeNotifier {
   }
 
   // ----------------------------------------------------------
+  // QUESTS: GENERIC
+  // ----------------------------------------------------------
+
+  List<XmlElement> quests() => root.kids('Quest').toList();
+
+  XmlElement addQuest(String name, String event) {
+    final q = makeEl('Quest', {'Name': name});
+
+    final events = makeEl('Events')..children.add(makeEl(event));
+
+    q.children.add(events);
+    q.children.add(makeEl('Actions'));
+
+    _mutate(() => root.children.add(q));
+
+    return q;
+  }
+
+  void duplicateRootElement(XmlElement el, String newName) {
+    final parent = el.parent;
+
+    if (parent == null) return;
+
+    _mutate(() {
+      final clone = el.copy();
+
+      if (newName.isNotEmpty) clone.put('Name', newName);
+
+      parent.children.insert(parent.children.indexOf(el) + 1, clone);
+    });
+  }
+
+  /// Заменяет элемент на разобранный из текста XML.
+  void replaceElementXml(XmlElement old, String xml) {
+    final fresh = parseFragment(xml);
+
+    final parent = old.parent;
+
+    if (parent == null) {
+      throw RaidForgeException('Элемент уже не принадлежит документу.');
+    }
+
+    _mutate(() {
+      parent.children.insert(parent.children.indexOf(old), fresh);
+      old.remove();
+    });
+  }
+
+  // ----------------------------------------------------------
+  // QUESTS: DOJO CHANGER
+  // ----------------------------------------------------------
+
+  static const String _actionIdVar = r'_$ActionID';
+  static const String _dojoTitle = 'DojoChangerTitle';
+  static const String _startupQuest = 'DojoChanger_LoadSelectedDojo';
+
+  String? _actionCond(XmlElement quest) {
+    final conds = quest.kid('Conditions');
+
+    if (conds == null) return null;
+
+    for (final e in conds.kids('Equal')) {
+      if (e.attr('Value1') == _actionIdVar) return e.attr('Value2');
+    }
+
+    return null;
+  }
+
+  bool _onActivate(XmlElement q) => q.kid('Events')?.kid('Activate') != null;
+
+  XmlElement? _dialog(XmlElement page) => page.kid('Actions')?.kid('Dialog');
+
+  XmlElement? _button(XmlElement dialog, String type) => dialog
+      .kids('Button')
+      .where((b) => b.attr('Type') == type)
+      .firstOrNull;
+
+  String? _buttonTarget(XmlElement dialog, String type) =>
+      _button(dialog, type)?.kid('Activate')?.attr('ActionID');
+
+  void _setButtonTarget(XmlElement dialog, String type, String? target) {
+    final btn = _button(dialog, type);
+
+    if (btn == null) return;
+
+    final act = btn.kid('Activate');
+
+    if (target == null) {
+      act?.remove();
+      return;
+    }
+
+    if (act == null) {
+      btn.children.add(makeEl('Activate', {'ActionID': target}));
+    } else {
+      act.put('ActionID', target);
+    }
+  }
+
+  XmlElement? _startupIf(String loader) {
+    for (final i in root.findAllElements('If')) {
+      final conds = i.kid('Conditions');
+
+      if (conds == null) continue;
+
+      for (final e in conds.kids('Equal')) {
+        if (e.attr('Value1') == '_DojoLoader' &&
+            e.attr('Value2') == loader) {
+          return i;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// Додзё в порядке листания: DefaultPage → NEXT → NEXT ...
+  /// Недостижимые страницы идут в конце.
+  List<DojoEntry> dojos() {
+    final pages = <String, XmlElement>{};
+    final loads = <String, XmlElement>{};
+
+    for (final q in quests()) {
+      if (!_onActivate(q)) continue;
+
+      final id = _actionCond(q);
+
+      if (id == null) continue;
+
+      final dialog = _dialog(q);
+
+      if (dialog != null && dialog.attr('Title') == _dojoTitle) {
+        pages.putIfAbsent(id, () => q);
+      } else if (q.kid('Actions')?.kid('ChangeDojoLocation') != null) {
+        loads.putIfAbsent(id, () => q);
+      }
+    }
+
+    final order = <String>[];
+
+    String? cur =
+        pages.containsKey('DefaultPage') ? 'DefaultPage' : pages.keys.firstOrNull;
+
+    while (cur != null && pages.containsKey(cur) && !order.contains(cur)) {
+      order.add(cur);
+      cur = _buttonTarget(_dialog(pages[cur]!)!, 'Right');
+    }
+
+    final linked = order.toSet();
+
+    for (final k in pages.keys) {
+      if (!linked.contains(k)) order.add(k);
+    }
+
+    final result = <DojoEntry>[];
+
+    for (final pa in order) {
+      final page = pages[pa]!;
+      final dialog = _dialog(page)!;
+      final loadAction = _buttonTarget(dialog, 'Middle') ?? '';
+      final load = loads[loadAction];
+      final actions = load?.kid('Actions');
+
+      var loader = '';
+
+      if (actions != null) {
+        for (final s in actions.kids('SetVariable')) {
+          if (s.attr('Name') == 'DojoLoader') {
+            loader = s.attr('Value');
+            break;
+          }
+        }
+      }
+
+      result.add(
+        DojoEntry(
+          page: page,
+          load: load,
+          startupIf: loader.isEmpty ? null : _startupIf(loader),
+          pageAction: pa,
+          loadAction: loadAction,
+          labelKey: dialog.kid('Line')?.attr('Text') ?? '',
+          location: actions?.kid('ChangeDojoLocation')?.attr('Name') ?? '',
+          loader: loader,
+          linked: linked.contains(pa),
+        ),
+      );
+    }
+
+    return result;
+  }
+
+  /// Перепривязывает NEXT / BACK по заданному порядку.
+  /// Первая страница: BACK просто закрывает диалог.
+  /// Последняя страница: NEXT возвращает на первую.
+  void _relinkChain(List<DojoEntry> order) {
+    for (var i = 0; i < order.length; i++) {
+      final dialog = _dialog(order[i].page);
+
+      if (dialog == null) continue;
+
+      _setButtonTarget(
+        dialog,
+        'Right',
+        order[(i + 1) % order.length].pageAction,
+      );
+
+      _setButtonTarget(
+        dialog,
+        'Left',
+        i == 0 ? null : order[i - 1].pageAction,
+      );
+    }
+  }
+
+  void _addStartup(String loader, String location) {
+    var q = quests()
+        .where((x) => x.attr('Name') == _startupQuest)
+        .firstOrNull;
+
+    if (q == null) {
+      final nq = parseFragment(_dojoStartupQuestTemplate);
+      root.children.add(nq);
+      q = nq;
+    }
+
+    var actions = q.kid('Actions');
+
+    if (actions == null) {
+      final na = makeEl('Actions');
+      q.children.add(na);
+      actions = na;
+    }
+
+    final iff = parseFragment(_dojoStartupIfTemplate);
+
+    iff.kid('Conditions')!.kid('Equal')!.put('Value2', loader);
+    iff.kid('Then')!.kid('ChangeDojoLocation')!.put('Name', location);
+
+    actions.children.add(iff);
+  }
+
+  /// Создаёт Page + Load + стартовую загрузку и добавляет додзё
+  /// в конец цепочки листания.
+  void addDojo({
+    required String id,
+    required String location,
+    String labelKey = '',
+    String loader = '',
+  }) {
+    if (!RegExp(r'^[A-Za-z0-9_]+$').hasMatch(id)) {
+      throw RaidForgeException('Id: только латиница, цифры и «_».');
+    }
+
+    if (location.isEmpty) {
+      throw RaidForgeException('Location (имя локации додзё) не задан.');
+    }
+
+    final pageAction = '${id}Page';
+    final loadAction = 'Dojo$id';
+    final label = labelKey.isEmpty ? 'Dojo$id' : labelKey;
+    final loaderValue = loader.isEmpty ? id : loader;
+
+    final existing = dojos();
+
+    if (existing.any(
+      (d) => d.pageAction == pageAction || d.loadAction == loadAction,
+    )) {
+      throw RaidForgeException('Додзё с Id «$id» уже есть.');
+    }
+
+    if (existing.any((d) => d.loader == loaderValue)) {
+      throw RaidForgeException('DojoLoader «$loaderValue» уже занят.');
+    }
+
+    final pageName = 'Dojo${id}_Page';
+    final loadName = 'Dojo${id}_Load';
+
+    if (quests().any(
+      (q) => q.attr('Name') == pageName || q.attr('Name') == loadName,
+    )) {
+      throw RaidForgeException('Квест $pageName / $loadName уже существует.');
+    }
+
+    _mutate(() {
+      final page = parseFragment(_dojoPageTemplate);
+
+      page.put('Name', pageName);
+      page.kid('Conditions')!.kid('Equal')!.put('Value2', pageAction);
+
+      final dialog = page.kid('Actions')!.kid('Dialog')!;
+
+      dialog.kid('Line')!.put('Text', label);
+
+      _setButtonTarget(dialog, 'Middle', loadAction);
+
+      final load = parseFragment(_dojoLoadTemplate);
+
+      load.put('Name', loadName);
+      load.kid('Conditions')!.kid('Equal')!.put('Value2', loadAction);
+
+      final la = load.kid('Actions')!;
+
+      la.kid('ChangeDojoLocation')!.put('Name', location);
+      la.kid('SetVariable')!.put('Value', loaderValue);
+
+      root.children.add(page);
+      root.children.add(load);
+
+      _addStartup(loaderValue, location);
+
+      // Новая страница недостижима, поэтому dojos() ставит её последней.
+      _relinkChain(dojos());
+    });
+  }
+
+  void editDojo(
+    String pageAction, {
+    String? labelKey,
+    String? location,
+    String? loader,
+  }) {
+    final e = dojos().where((d) => d.pageAction == pageAction).firstOrNull;
+
+    if (e == null) throw RaidForgeException('Додзё не найдено.');
+
+    if (labelKey != null && labelKey.isEmpty) {
+      throw RaidForgeException('Текст (Line Text) не может быть пустым.');
+    }
+
+    if (location != null && location.isEmpty) {
+      throw RaidForgeException('Location не может быть пустым.');
+    }
+
+    if (loader != null) {
+      if (loader.isEmpty) {
+        throw RaidForgeException('DojoLoader не может быть пустым.');
+      }
+
+      if (dojos().any(
+        (d) => d.pageAction != pageAction && d.loader == loader,
+      )) {
+        throw RaidForgeException('DojoLoader «$loader» уже занят.');
+      }
+    }
+
+    final changed = (labelKey != null && labelKey != e.labelKey) ||
+        (location != null && location != e.location) ||
+        (loader != null && loader != e.loader);
+
+    if (!changed) return;
+
+    _mutate(() {
+      if (labelKey != null) {
+        _dialog(e.page)?.kid('Line')?.put('Text', labelKey);
+      }
+
+      if (location != null) {
+        e.load?.kid('Actions')?.kid('ChangeDojoLocation')?.put(
+              'Name',
+              location,
+            );
+
+        final si = e.startupIf;
+
+        if (si != null) {
+          for (final c in si.findAllElements('ChangeDojoLocation')) {
+            c.put('Name', location);
+          }
+        }
+      }
+
+      if (loader != null) {
+        final la = e.load?.kid('Actions');
+
+        if (la != null) {
+          for (final s in la.kids('SetVariable')) {
+            if (s.attr('Name') == 'DojoLoader') s.put('Value', loader);
+          }
+        }
+
+        final conds = e.startupIf?.kid('Conditions');
+
+        if (conds != null) {
+          for (final c in conds.kids('Equal')) {
+            if (c.attr('Value1') == '_DojoLoader') c.put('Value2', loader);
+          }
+        }
+      }
+    });
+  }
+
+  void deleteDojo(String pageAction) {
+    final all = dojos();
+
+    final e = all.where((d) => d.pageAction == pageAction).firstOrNull;
+
+    if (e == null) return;
+
+    if (all.first.pageAction == pageAction) {
+      throw RaidForgeException('Первое (стартовое) додзё удалить нельзя.');
+    }
+
+    final rest = all.where((d) => d.pageAction != pageAction).toList();
+
+    _mutate(() {
+      final si = e.startupIf;
+
+      XmlElement? owner;
+
+      if (si != null) {
+        owner = si.ancestors
+            .whereType<XmlElement>()
+            .where((a) => a.name.local == 'Quest')
+            .firstOrNull;
+
+        si.remove();
+      }
+
+      e.page.remove();
+      e.load?.remove();
+
+      // Отдельный стартовый квест без действий больше не нужен.
+      if (owner != null && owner.attr('Name') != _startupQuest) {
+        final act = owner.kid('Actions');
+
+        if (act == null || act.childElements.isEmpty) owner.remove();
+      }
+
+      _relinkChain(rest);
+    });
+  }
+
+  /// Сдвигает додзё по цепочке. Первое (стартовое) место зафиксировано.
+  void moveDojo(String pageAction, int delta) {
+    final list = dojos();
+
+    final i = list.indexWhere((d) => d.pageAction == pageAction);
+
+    final j = i + delta;
+
+    if (i < 1 || j < 1 || j >= list.length) return;
+
+    final t = list[i];
+    list[i] = list[j];
+    list[j] = t;
+
+    _mutate(() => _relinkChain(list));
+  }
+
+  DiagnosticsResult _questDiagnostics() {
+    final errors = <String>[];
+    final warnings = <String>[];
+
+    final names = <String, int>{};
+
+    for (final q in quests()) {
+      final n = q.attr('Name');
+
+      if (n.isEmpty) {
+        errors.add('Quest без Name.');
+        continue;
+      }
+
+      names[n] = (names[n] ?? 0) + 1;
+    }
+
+    names.forEach((n, c) {
+      if (c > 1) warnings.add('Дубликат Quest Name: $n (×$c).');
+    });
+
+    final list = dojos();
+
+    if (list.isEmpty) {
+      warnings.add('Dojo Changer: страницы выбора додзё не найдены.');
+    }
+
+    final pageIds = list.map((d) => d.pageAction).toSet();
+    final loaders = <String, int>{};
+
+    for (final d in list) {
+      final t = d.title;
+
+      if (d.loadAction.isEmpty) {
+        errors.add('$t: у кнопки SELECT нет Activate ActionID.');
+      } else if (d.load == null) {
+        errors.add('$t: нет Load-квеста для ActionID «${d.loadAction}».');
+      }
+
+      if (d.load != null) {
+        if (d.location.isEmpty) errors.add('$t: нет ChangeDojoLocation.');
+
+        if (d.loader.isEmpty) {
+          warnings.add('$t: Load-квест не ставит DojoLoader.');
+        }
+      }
+
+      if (d.loader.isNotEmpty) {
+        loaders[d.loader] = (loaders[d.loader] ?? 0) + 1;
+
+        final si = d.startupIf;
+
+        if (si == null) {
+          if (d.loader != 'Default') {
+            warnings.add(
+              '$t: нет стартовой загрузки (If _DojoLoader = ${d.loader}) — '
+              'выбор не восстановится после перезапуска.',
+            );
+          }
+        } else {
+          final startLoc =
+              si.deep('ChangeDojoLocation')?.attr('Name') ?? '';
+
+          if (startLoc != d.location) {
+            warnings.add(
+              '$t: локация при старте («$startLoc») не совпадает '
+              'с Load-квестом («${d.location}»).',
+            );
+          }
+        }
+      }
+
+      if (!d.linked) {
+        warnings.add('$t: страница недостижима по цепочке NEXT.');
+      }
+
+      final dialog = _dialog(d.page);
+
+      if (dialog != null) {
+        for (final type in const ['Right', 'Left']) {
+          final target = _buttonTarget(dialog, type);
+
+          if (target != null && !pageIds.contains(target)) {
+            errors.add(
+              '$t: кнопка $type ведёт на несуществующую '
+              'страницу «$target».',
+            );
+          }
+        }
+      }
+    }
+
+    loaders.forEach((l, c) {
+      if (c > 1) warnings.add('DojoLoader «$l» используется $c раз(а).');
+    });
+
+    return DiagnosticsResult(errors, warnings, statistics());
+  }
+
+  // ----------------------------------------------------------
   // DIAGNOSTICS
   // ----------------------------------------------------------
 
   DiagnosticsResult diagnostics() {
+    if (kind.isQuests) return _questDiagnostics();
+
     final errors = <String>[];
 
     final warnings = <String>[];
@@ -1242,8 +1946,9 @@ class _StartScreenState extends State<StartScreen> {
 
   AccessMode _mode = AccessMode.direct;
   ShizukuState _shz = ShizukuState.notInstalled;
-  List<String> _xmlFiles = [];
-  String _xmlFile = 'raid_stages.xml';
+  // Файлы, найденные в gamedata при последнем поиске (только 3 допустимых).
+  Set<String> _found = {};
+  String _xmlFile = XmlKind.raid.fileName;
   bool _busy = false;
 
   @override
@@ -1298,18 +2003,22 @@ class _StartScreenState extends State<StartScreen> {
     if (!await _ensureShizuku()) return;
     try {
       final all = await ShizukuBridge.list(gamedataDir(_pkgText));
-      final xmls = all.where((f) => f.toLowerCase().endsWith('.xml')).toList()
-        ..sort();
+      final found = <String>{
+        for (final k in XmlKind.values)
+          if (all.contains(k.fileName)) k.fileName,
+      };
       if (!mounted) return;
       setState(() {
-        _xmlFiles = xmls;
-        if (xmls.isNotEmpty && !xmls.contains(_xmlFile)) {
-          _xmlFile = xmls.contains('raid_stages.xml')
-              ? 'raid_stages.xml'
-              : xmls.first;
+        _found = found;
+        if (found.isNotEmpty && !found.contains(_xmlFile)) {
+          _xmlFile = found.contains(XmlKind.raid.fileName)
+              ? XmlKind.raid.fileName
+              : found.first;
         }
       });
-      if (xmls.isEmpty) toast(context, 'XML в gamedata не найдено.');
+      if (found.isEmpty) {
+        toast(context, 'В gamedata нет файлов: ${XmlKind.allowedList}.');
+      }
     } catch (e) {
       if (mounted) toast(context, 'Ошибка чтения папки: $e');
     }
@@ -1339,10 +2048,22 @@ class _StartScreenState extends State<StartScreen> {
         toast(context, 'Не удалось получить путь к файлу.');
         return;
       }
+      if (XmlKind.fromPath(selected) == null) {
+        toast(context, 'Можно открыть только: ${XmlKind.allowedList}.');
+        return;
+      }
       setState(() => _path.text = selected);
     } catch (e) {
       if (mounted) toast(context, 'Ошибка выбора файла: $e');
     }
+  }
+
+  /// Меняет имя файла в пути (папка остаётся прежней).
+  void _setDirectFile(XmlKind k) {
+    final p = _path.text.trim();
+    final i = p.lastIndexOf('/');
+    final dir = i > 0 ? p.substring(0, i) : '/storage/emulated/0';
+    setState(() => _path.text = '$dir/${k.fileName}');
   }
 
   Future<void> _open() async {
@@ -1371,14 +2092,25 @@ class _StartScreenState extends State<StartScreen> {
         if (mounted) toast(context, 'Укажи путь к XML-файлу.');
         return;
       }
-      final c = RaidForgeController(path, io);
+      final kind = XmlKind.fromPath(path);
+      if (kind == null) {
+        if (mounted) {
+          toast(context, 'Можно открыть только: ${XmlKind.allowedList}.');
+        }
+        return;
+      }
+      final c = RaidForgeController(path, io, kind);
       await c.load();
       if (!mounted) {
         c.dispose();
         return;
       }
       ctrl = c;
-      go(context, const HomeScreen());
+      // quests.xml открывается в специальном редакторе квестов / додзё.
+      go(
+        context,
+        kind.isQuests ? const QuestsHomeScreen() : const HomeScreen(),
+      );
     } on RaidForgeException catch (e) {
       if (mounted) toast(context, e.message);
     } catch (e) {
@@ -1425,8 +2157,9 @@ class _StartScreenState extends State<StartScreen> {
                   if (!shizuku) ...[
                     TextField(
                       controller: _path,
+                      onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
-                        labelText: 'Путь к raid_stages.xml',
+                        labelText: 'Путь к XML (${XmlKind.allowedList})',
                         border: const OutlineInputBorder(),
                         suffixIcon: IconButton(
                           tooltip: 'Обзор',
@@ -1434,6 +2167,18 @@ class _StartScreenState extends State<StartScreen> {
                           onPressed: _busy ? null : _pickFile,
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final k in XmlKind.values)
+                          ChoiceChip(
+                            label: Text(k.fileName),
+                            selected: XmlKind.fromPath(_path.text) == k,
+                            onSelected: _busy ? null : (_) => _setDirectFile(k),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
@@ -1476,33 +2221,34 @@ class _StartScreenState extends State<StartScreen> {
                         hintText: 'com.ggf.sf2',
                         border: OutlineInputBorder(),
                       ),
-                      onChanged: (_) => setState(() => _xmlFiles = []),
+                      onChanged: (_) => setState(() => _found = {}),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
-                          child: _xmlFiles.isEmpty
-                              ? InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Файл',
-                                    border: OutlineInputBorder(),
+                          child: DropdownButtonFormField<String>(
+                            value: _xmlFile,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Файл',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              for (final k in XmlKind.values)
+                                DropdownMenuItem(
+                                  value: k.fileName,
+                                  child: Text(
+                                    _found.isEmpty
+                                        ? k.fileName
+                                        : '${k.fileName}  '
+                                            '${_found.contains(k.fileName) ? '✓' : '✗'}',
                                   ),
-                                  child: Text(_xmlFile),
-                                )
-                              : DropdownButtonFormField<String>(
-                                  value: _xmlFile,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Файл',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: [
-                                    for (final f in _xmlFiles)
-                                      DropdownMenuItem(value: f, child: Text(f)),
-                                  ],
-                                  onChanged: (v) =>
-                                      setState(() => _xmlFile = v ?? _xmlFile),
                                 ),
+                            ],
+                            onChanged: (v) =>
+                                setState(() => _xmlFile = v ?? _xmlFile),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         IconButton.filledTonal(
@@ -1906,19 +2652,25 @@ class DiagnosticsScreen extends StatelessWidget {
             'Statistics',
             style: TextStyle(color: Colors.cyanAccent),
           ),
-          Text(
-            'Zones=${s.zones}, Battles=${s.battles}, Warriors=${s.warriors}',
-          ),
-          Text(
-            'WarriorPerks=${s.warriorPerks}, '
-            'RulePerks=${s.rulePerks}, '
-            'ComplexRules=${s.complexRules}',
-          ),
-          Text(
-            'EquipItems=${s.equipItems}, '
-            'Currency=${s.currencies}, '
-            'Conditions=${s.conditions}',
-          ),
+          if (ctrl.kind.isQuests)
+            Text(
+              'Quests=${s.quests}, Dojo=${s.dojos}, Include=${s.includes}',
+            )
+          else ...[
+            Text(
+              'Zones=${s.zones}, Battles=${s.battles}, Warriors=${s.warriors}',
+            ),
+            Text(
+              'WarriorPerks=${s.warriorPerks}, '
+              'RulePerks=${s.rulePerks}, '
+              'ComplexRules=${s.complexRules}',
+            ),
+            Text(
+              'EquipItems=${s.equipItems}, '
+              'Currency=${s.currencies}, '
+              'Conditions=${s.conditions}',
+            ),
+          ],
         ],
       ),
     );
@@ -3352,6 +4104,830 @@ class RewardScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+// ============================================================
+// QUESTS EDITOR (quests.xml)
+// ============================================================
+
+void guard(BuildContext c, void Function() action) {
+  try {
+    action();
+  } on RaidForgeException catch (e) {
+    toast(c, e.message);
+  }
+}
+
+final RegExp _tagRe = RegExp(r'^[A-Za-z_][A-Za-z0-9_.\-]*$');
+
+Widget editorBottomBar(BuildContext context) {
+  return BottomAppBar(
+    height: 64,
+    child: Row(
+      children: [
+        IconButton(
+          tooltip: 'Отменить (${ctrl.undoCount}/$maxUndo)',
+          icon: Badge(
+            isLabelVisible: ctrl.undoCount > 0,
+            label: Text('${ctrl.undoCount}'),
+            child: const Icon(Icons.undo),
+          ),
+          onPressed: () {
+            if (!ctrl.undo()) toast(context, 'История изменений пуста.');
+          },
+        ),
+        IconButton(
+          tooltip: 'Сохранить + backup',
+          icon: const Icon(Icons.save),
+          onPressed: () => doSave(context),
+        ),
+        const Spacer(),
+        Text(
+          ctrl.dirty ? 'Есть изменения' : 'Сохранено',
+          style: TextStyle(
+            fontSize: 11,
+            color: ctrl.dirty ? Colors.amber : Colors.grey,
+          ),
+        ),
+        const SizedBox(width: 12),
+      ],
+    ),
+  );
+}
+
+String _childTags(XmlElement? n) {
+  if (n == null) return '—';
+
+  final tags = n.childElements.map((e) => e.name.local).toList();
+
+  if (tags.isEmpty) return '—';
+
+  final shown = tags.take(8).join(', ');
+
+  return tags.length > 8 ? '$shown … (+${tags.length - 8})' : shown;
+}
+
+// ------------------------------------------------------------
+// HOME
+// ------------------------------------------------------------
+
+class QuestsHomeScreen extends StatelessWidget {
+  const QuestsHomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        final st = ctrl.statistics();
+        final diag = ctrl.diagnostics();
+
+        return PopScope(
+          canPop: !ctrl.dirty,
+          onPopInvokedWithResult: (didPop, _) async {
+            if (didPop) return;
+
+            final ok = await confirm(
+              context,
+              'Есть несохранённые изменения. Выйти без сохранения?',
+            );
+
+            if (ok && context.mounted) Navigator.of(context).pop();
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(
+                ctrl.dirty ? 'QUESTS  ● изменён' : 'QUESTS',
+              ),
+              actions: [
+                PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'diag') {
+                      go(context, const DiagnosticsScreen());
+                    }
+
+                    if (v == 'about') {
+                      showAboutDialog(
+                        context: context,
+                        applicationName: 'SF2 Raid Forge — Quests',
+                        children: const [
+                          Text(
+                            'Редактор quests.xml.\n\n'
+                            'Выбор додзё (Dojo Changer): страницы, '
+                            'SELECT-загрузка, стартовое восстановление. '
+                            'Все квесты: поиск, правка атрибутов и XML, '
+                            'дублирование, удаление. Undo, диагностика, '
+                            'сохранение с backup.',
+                          ),
+                        ],
+                      );
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'diag',
+                      child: Text('Проверить XML'),
+                    ),
+                    PopupMenuItem(
+                      value: 'about',
+                      child: Text('О программе'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            body: ListView(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                  child: Text(
+                    ctrl.filePath,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Chip(label: Text('Quests: ${st.quests}')),
+                      Chip(label: Text('Додзё: ${st.dojos}')),
+                      Chip(label: Text('Include: ${st.includes}')),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                tile(
+                  Icons.home_work,
+                  'Выбор додзё (Dojo Changer)',
+                  sub: '${st.dojos} додзё • листание NEXT / BACK / SELECT',
+                  onTap: () => go(context, const DojoChangerScreen()),
+                ),
+                tile(
+                  Icons.list_alt,
+                  'Все квесты',
+                  sub: '${st.quests} квестов • поиск, XML, атрибуты',
+                  onTap: () => go(context, const QuestListScreen()),
+                ),
+                tile(
+                  Icons.fact_check,
+                  'Проверить quests.xml',
+                  sub: 'Ошибок: ${diag.errors.length} • '
+                      'Предупреждений: ${diag.warnings.length}',
+                  onTap: () => go(context, const DiagnosticsScreen()),
+                ),
+                const SizedBox(height: 80),
+              ],
+            ),
+            bottomNavigationBar: editorBottomBar(context),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// DOJO CHANGER
+// ------------------------------------------------------------
+
+class DojoChangerScreen extends StatelessWidget {
+  const DojoChangerScreen({super.key});
+
+  Future<void> _add(BuildContext context) async {
+    final r = await form(
+      context,
+      'Новое додзё',
+      {
+        'Id': '',
+        'Location': '',
+        'Text key (Line Text)': '',
+        'DojoLoader': '',
+      },
+      hint: 'Id — латиница без пробелов, например Halloween26.\n'
+          'Location — имя локации для ChangeDojoLocation '
+          '(например dojo_hw26).\n'
+          'Text key — ключ текста в диалоге (пусто = Dojo<Id>).\n'
+          'DojoLoader — значение переменной (пусто = Id).',
+    );
+
+    if (r == null || !context.mounted) return;
+
+    guard(
+      context,
+      () => ctrl.addDojo(
+        id: r['Id']!,
+        location: r['Location']!,
+        labelKey: r['Text key (Line Text)']!,
+        loader: r['DojoLoader']!,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        final list = ctrl.dojos();
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('ВЫБОР ДОДЗЁ')),
+          floatingActionButton: FloatingActionButton.extended(
+            icon: const Icon(Icons.add),
+            label: const Text('Додзё'),
+            onPressed: () => _add(context),
+          ),
+          body: list.isEmpty
+              ? emptyNote(
+                  'Страницы выбора додзё не найдены.\n'
+                  'Нажми «Додзё», чтобы создать первую.',
+                )
+              : ListView(
+                  children: [
+                    for (var i = 0; i < list.length; i++)
+                      ListTile(
+                        leading: CircleAvatar(
+                          radius: 14,
+                          child: Text(
+                            '${i + 1}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        title: Text(list[i].title),
+                        subtitle: Text(
+                          '${list[i].location.isEmpty ? '—' : list[i].location}'
+                          ' • ${list[i].loader.isEmpty ? '—' : list[i].loader}'
+                          '${list[i].startupIf == null && list[i].loader != 'Default' && list[i].loader.isNotEmpty ? '\n⚠ нет стартовой загрузки' : ''}'
+                          '${list[i].linked ? '' : '\n⚠ вне цепочки NEXT'}',
+                        ),
+                        isThreeLine: list[i].startupIf == null ||
+                            !list[i].linked,
+                        onTap: () => go(
+                          context,
+                          DojoEditScreen(list[i].pageAction),
+                        ),
+                        trailing: i == 0
+                            ? const Icon(Icons.lock_outline, size: 18)
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Выше',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.arrow_upward),
+                                    onPressed: i <= 1
+                                        ? null
+                                        : () => ctrl.moveDojo(
+                                              list[i].pageAction,
+                                              -1,
+                                            ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Ниже',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.arrow_downward),
+                                    onPressed: i >= list.length - 1
+                                        ? null
+                                        : () => ctrl.moveDojo(
+                                              list[i].pageAction,
+                                              1,
+                                            ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    const SizedBox(height: 80),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class DojoEditScreen extends StatelessWidget {
+  final String pageAction;
+
+  const DojoEditScreen(this.pageAction, {super.key});
+
+  Future<void> _editField(
+    BuildContext context,
+    String label,
+    String current,
+    void Function(String v) apply,
+  ) async {
+    final r = await form(context, label, {label: current});
+
+    if (r == null || !context.mounted) return;
+
+    guard(context, () => apply(r[label]!));
+  }
+
+  Future<void> _editXml(BuildContext context, XmlElement el) async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => XmlEditScreen(el)),
+    );
+
+    if (ok == true && context.mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        final e = ctrl
+            .dojos()
+            .where((d) => d.pageAction == pageAction)
+            .firstOrNull;
+
+        if (e == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('ДОДЗЁ')),
+            body: emptyNote('Додзё не найдено (удалено или изменён ActionID).'),
+          );
+        }
+
+        final first = ctrl.dojos().first.pageAction == pageAction;
+
+        return Scaffold(
+          appBar: AppBar(title: Text('ДОДЗЁ — ${e.title}')),
+          body: ListView(
+            children: [
+              tile(
+                Icons.title,
+                'Текст страницы (Line Text)',
+                sub: e.labelKey.isEmpty ? '—' : e.labelKey,
+                onTap: () => _editField(
+                  context,
+                  'Line Text',
+                  e.labelKey,
+                  (v) => ctrl.editDojo(pageAction, labelKey: v),
+                ),
+              ),
+              tile(
+                Icons.place,
+                'Локация (ChangeDojoLocation)',
+                sub: e.location.isEmpty ? '—' : e.location,
+                onTap: () => _editField(
+                  context,
+                  'Location',
+                  e.location,
+                  (v) => ctrl.editDojo(pageAction, location: v),
+                ),
+              ),
+              tile(
+                Icons.bookmark,
+                'DojoLoader (переменная выбора)',
+                sub: e.loader.isEmpty ? '—' : e.loader,
+                onTap: () => _editField(
+                  context,
+                  'DojoLoader',
+                  e.loader,
+                  (v) => ctrl.editDojo(pageAction, loader: v),
+                ),
+              ),
+              const Divider(),
+              tile(
+                Icons.link,
+                'ActionID',
+                sub: 'Страница: ${e.pageAction}\n'
+                    'SELECT → ${e.loadAction.isEmpty ? '—' : e.loadAction}',
+                trailing: const SizedBox.shrink(),
+              ),
+              tile(
+                Icons.restart_alt,
+                'Стартовая загрузка',
+                sub: e.startupIf != null
+                    ? 'Есть (If _DojoLoader = ${e.loader})'
+                    : (e.loader == 'Default'
+                        ? 'Не нужна для Default'
+                        : 'Нет — выбор не восстановится после перезапуска'),
+                trailing: const SizedBox.shrink(),
+              ),
+              const Divider(),
+              tile(
+                Icons.code,
+                'XML страницы',
+                onTap: () => go(context, XmlViewScreen(e.page)),
+              ),
+              tile(
+                Icons.edit_note,
+                'Редактировать XML страницы',
+                onTap: () => _editXml(context, e.page),
+              ),
+              if (e.load != null) ...[
+                tile(
+                  Icons.code,
+                  'XML Load-квеста',
+                  onTap: () => go(context, XmlViewScreen(e.load!)),
+                ),
+                tile(
+                  Icons.edit_note,
+                  'Редактировать XML Load-квеста',
+                  onTap: () => _editXml(context, e.load!),
+                ),
+              ],
+              if (!first)
+                tile(
+                  Icons.delete_forever,
+                  'Удалить додзё',
+                  sub: 'Page + Load + стартовая загрузка, цепочка '
+                      'NEXT/BACK перестроится',
+                  onTap: () async {
+                    if (!await confirm(
+                      context,
+                      'Удалить додзё ${e.title}?',
+                    )) {
+                      return;
+                    }
+
+                    if (!context.mounted) return;
+
+                    guard(context, () {
+                      ctrl.deleteDojo(pageAction);
+                      Navigator.of(context).pop();
+                    });
+                  },
+                ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// ALL QUESTS
+// ------------------------------------------------------------
+
+class QuestListScreen extends StatefulWidget {
+  const QuestListScreen({super.key});
+
+  @override
+  State<QuestListScreen> createState() => _QuestListScreenState();
+}
+
+class _QuestListScreenState extends State<QuestListScreen> {
+  String q = '';
+
+  Future<void> _add() async {
+    final r = await form(
+      context,
+      'Новый квест',
+      {'Name': '', 'Event': 'ApplicationStart'},
+      hint: 'Event: ApplicationStart, SessionStart, FightEnd, FightEnter, '
+          'Activate, MapButtonPress …\n'
+          'Тело (Conditions / Actions) правится через «Редактировать XML».',
+    );
+
+    if (r == null || !mounted) return;
+
+    if (r['Name']!.isEmpty || !_tagRe.hasMatch(r['Event']!)) {
+      toast(context, 'Нужны Name и корректный Event.');
+      return;
+    }
+
+    final el = ctrl.addQuest(r['Name']!, r['Event']!);
+
+    go(context, QuestScreen(el));
+  }
+
+  bool _match(XmlElement e, String lq) {
+    if (lq.isEmpty) return true;
+
+    return e.toXmlString().toLowerCase().contains(lq);
+  }
+
+  String _title(XmlElement e) {
+    if (e.name.local == 'Quest') return e.attr('Name', '?');
+
+    if (e.name.local == 'Include') return 'Include: ${e.attr('File', '?')}';
+
+    return e.name.local;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        final lq = q.trim().toLowerCase();
+
+        final items =
+            ctrl.root.childElements.where((e) => _match(e, lq)).toList();
+
+        return Scaffold(
+          appBar: AppBar(
+            title: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Поиск: имя, переменная, предмет, текст…',
+                border: InputBorder.none,
+              ),
+              onChanged: (v) => setState(() => q = v),
+            ),
+          ),
+          floatingActionButton: FloatingActionButton.extended(
+            icon: const Icon(Icons.add),
+            label: const Text('Квест'),
+            onPressed: _add,
+          ),
+          body: items.isEmpty
+              ? emptyNote('Ничего не найдено.')
+              : ListView.builder(
+                  itemCount: items.length + 1,
+                  itemBuilder: (_, i) {
+                    if (i == items.length) return const SizedBox(height: 80);
+
+                    final el = items[i];
+
+                    final isQuest = el.name.local == 'Quest';
+
+                    final events = el.kid('Events')?.childElements
+                            .map((x) => x.name.local)
+                            .join(', ') ??
+                        '';
+
+                    final prio = el.getAttribute('Priority');
+
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        isQuest ? Icons.bolt : Icons.attach_file,
+                      ),
+                      title: Text(_title(el)),
+                      subtitle: isQuest
+                          ? Text(
+                              [
+                                if (events.isNotEmpty) events,
+                                if (prio != null) 'Priority=$prio',
+                              ].join(' • '),
+                            )
+                          : null,
+                      onTap: () => go(context, QuestScreen(el)),
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (v) async {
+                          if (v == 'dup') {
+                            final r = await form(
+                              context,
+                              'Дублировать',
+                              {'Name': '${el.attr('Name', 'Quest')}_COPY'},
+                            );
+
+                            if (r != null) {
+                              ctrl.duplicateRootElement(el, r['Name']!);
+                            }
+                          } else if (v == 'del') {
+                            if (await confirm(
+                              context,
+                              'Удалить ${_title(el)}?',
+                            )) {
+                              ctrl.removeChild(el);
+                            }
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          if (isQuest)
+                            const PopupMenuItem(
+                              value: 'dup',
+                              child: Text('Дублировать'),
+                            ),
+                          const PopupMenuItem(
+                            value: 'del',
+                            child: Text('Удалить'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        );
+      },
+    );
+  }
+}
+
+class QuestScreen extends StatelessWidget {
+  final XmlElement el;
+
+  const QuestScreen(this.el, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        final isQuest = el.name.local == 'Quest';
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              isQuest
+                  ? 'КВЕСТ — ${el.attr('Name', '?')}'
+                  : el.name.local.toUpperCase(),
+            ),
+          ),
+          body: ListView(
+            children: [
+              if (isQuest) ...[
+                tile(
+                  Icons.edit,
+                  'Name',
+                  sub: el.attr('Name', '—'),
+                  onTap: () async {
+                    final r = await form(
+                      context,
+                      'Name',
+                      {'Name': el.attr('Name')},
+                    );
+
+                    if (r == null) return;
+
+                    if (r['Name']!.isEmpty) {
+                      if (context.mounted) {
+                        toast(context, 'Name не может быть пустым.');
+                      }
+                      return;
+                    }
+
+                    ctrl.changeAttr(el, 'Name', r['Name']!);
+                  },
+                ),
+                tile(
+                  Icons.priority_high,
+                  'Priority',
+                  sub: el.getAttribute('Priority') ?? '—',
+                  onTap: () async {
+                    final r = await form(
+                      context,
+                      'Priority',
+                      {'Priority': el.attr('Priority')},
+                      hint: 'Пусто — удалить атрибут',
+                    );
+
+                    if (r == null) return;
+
+                    if (r['Priority']!.isEmpty) {
+                      if (el.getAttribute('Priority') != null) {
+                        ctrl.removeAttr(el, 'Priority');
+                      }
+                    } else {
+                      ctrl.changeAttr(el, 'Priority', r['Priority']!);
+                    }
+                  },
+                ),
+              ],
+              tile(
+                Icons.tune,
+                'Атрибуты',
+                sub: '${el.attributes.length}',
+                onTap: () => go(context, AttrsScreen(el, 'Атрибуты')),
+              ),
+              if (isQuest) ...[
+                tile(
+                  Icons.flash_on,
+                  'Events',
+                  sub: _childTags(el.kid('Events')),
+                  trailing: const SizedBox.shrink(),
+                ),
+                tile(
+                  Icons.rule,
+                  'Conditions',
+                  sub: _childTags(el.kid('Conditions')),
+                  trailing: const SizedBox.shrink(),
+                ),
+                tile(
+                  Icons.play_arrow,
+                  'Actions',
+                  sub: _childTags(el.kid('Actions')),
+                  trailing: const SizedBox.shrink(),
+                ),
+              ],
+              tile(
+                Icons.edit_note,
+                'Редактировать XML',
+                sub: 'Полная правка Events / Conditions / Actions',
+                onTap: () async {
+                  final ok = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(builder: (_) => XmlEditScreen(el)),
+                  );
+
+                  if (ok == true && context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+              tile(
+                Icons.code,
+                'Просмотр XML',
+                onTap: () => go(context, XmlViewScreen(el)),
+              ),
+              if (isQuest)
+                tile(
+                  Icons.content_copy,
+                  'Дублировать',
+                  onTap: () async {
+                    final r = await form(
+                      context,
+                      'Дублировать',
+                      {'Name': '${el.attr('Name', 'Quest')}_COPY'},
+                    );
+
+                    if (r != null) {
+                      ctrl.duplicateRootElement(el, r['Name']!);
+
+                      if (context.mounted) {
+                        toast(context, 'Копия добавлена после оригинала.');
+                      }
+                    }
+                  },
+                ),
+              tile(
+                Icons.delete_forever,
+                'Удалить',
+                onTap: () async {
+                  if (await confirm(context, 'Удалить этот элемент?')) {
+                    ctrl.removeChild(el);
+
+                    if (context.mounted) Navigator.of(context).pop();
+                  }
+                },
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// RAW XML EDITOR
+// ------------------------------------------------------------
+
+class XmlEditScreen extends StatefulWidget {
+  final XmlElement el;
+
+  const XmlEditScreen(this.el, {super.key});
+
+  @override
+  State<XmlEditScreen> createState() => _XmlEditScreenState();
+}
+
+class _XmlEditScreenState extends State<XmlEditScreen> {
+  late final TextEditingController _c =
+      TextEditingController(text: ctrl.elementToXml(widget.el));
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    try {
+      ctrl.replaceElementXml(widget.el, _c.text);
+
+      Navigator.of(context).pop(true);
+    } on RaidForgeException catch (e) {
+      toast(context, e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('XML — ${widget.el.name.local}'),
+        actions: [
+          IconButton(
+            tooltip: 'Применить',
+            icon: const Icon(Icons.check),
+            onPressed: _save,
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(8),
+        child: TextField(
+          controller: _c,
+          maxLines: null,
+          expands: true,
+          textAlignVertical: TextAlignVertical.top,
+          keyboardType: TextInputType.multiline,
+          autocorrect: false,
+          enableSuggestions: false,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
       ),
     );
   }
