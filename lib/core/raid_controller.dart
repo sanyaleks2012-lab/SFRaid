@@ -114,7 +114,7 @@ class RaidForgeController extends ChangeNotifier {
     return true;
   }
 
-  // ---------- RAID TREE ----------
+  // ---------- TREE ----------
 
   List<XmlElement> zones() {
     final node = root.kid('Zones');
@@ -167,6 +167,40 @@ class RaidForgeController extends ChangeNotifier {
       if (values.any((v) => v.toLowerCase().contains(q))) out.add(i);
     }
     return out;
+  }
+
+  // ---------- ZONES ----------
+
+  XmlElement? zoneAt(int index) {
+    final z = zones();
+    return index >= 0 && index < z.length ? z[index] : null;
+  }
+
+  void createZone(String name, String fileName) {
+    _mutate(() {
+      var node = root.kid('Zones');
+      if (node == null) {
+        node = makeEl('Zones');
+        root.children.add(node);
+      }
+      node.children.add(makeEl('Zone', {'Name': name, 'FileName': fileName}));
+    });
+  }
+
+  void editZone(XmlElement zone, String name, String fileName) {
+    _mutate(() {
+      zone.put('Name', name);
+      zone.put('FileName', fileName);
+    });
+  }
+
+  void deleteZone(XmlElement zone) => _mutate(() => zone.remove());
+
+  void cloneBattleToZone(XmlElement template, XmlElement zone, String newName) {
+    _mutate(() {
+      final copy = template.copy()..put('Name', newName);
+      zone.children.add(copy);
+    });
   }
 
   // ---------- BATTLES ----------
@@ -228,6 +262,27 @@ class RaidForgeController extends ChangeNotifier {
     });
   }
 
+  XmlElement ensureReward(XmlElement battle) {
+    final existing = rewardOf(battle);
+    if (existing != null) return existing;
+    final r = makeEl('Reward', {'PrizeBase': '0', 'Exp': '0', 'Bonus': '0'});
+    _mutate(() => battle.children.add(r));
+    return r;
+  }
+
+  void addCurrency(XmlElement reward, String name, String value) {
+    _mutate(() => reward.children.add(
+          makeEl('Currency', {'Name': name, 'ExpectedValue': value}),
+        ));
+  }
+
+  void editCurrency(XmlElement c, String name, String value) {
+    _mutate(() {
+      c.put('Name', name);
+      c.put('ExpectedValue', value);
+    });
+  }
+
   // ---------- PERKS ----------
 
   bool hasPerk(XmlElement warrior, String name) =>
@@ -243,6 +298,25 @@ class RaidForgeController extends ChangeNotifier {
       }
       container.children.add(def.toBattleXml());
     });
+  }
+
+  void addPerkByName(XmlElement warrior, String name) {
+    _mutate(() {
+      var container = warrior.kid('Perks');
+      if (container == null) {
+        container = makeEl('Perks');
+        warrior.children.add(container);
+      }
+      container.children.add(makeEl('Perk', {'Name': name}));
+    });
+  }
+
+  XmlElement ensureSetNode(XmlElement perk) {
+    final existing = perk.kid('Set');
+    if (existing != null) return existing;
+    final s = makeEl('Set');
+    _mutate(() => perk.children.add(s));
+    return s;
   }
 
   void removeNode(XmlElement el) => _mutate(() => el.remove());
@@ -261,6 +335,39 @@ class RaidForgeController extends ChangeNotifier {
     _mutate(() => rules.children.add(
           makeEl('EquipItem', {'Name': name, 'ApplyTo': applyTo}),
         ));
+  }
+
+  void editEquip(XmlElement item, String name, String applyTo) {
+    _mutate(() {
+      item.put('Name', name);
+      item.put('ApplyTo', applyTo);
+    });
+  }
+
+  void setAvatarName(XmlElement rules, String avatar, String name) {
+    _mutate(() {
+      _upsertTag(rules, 'Avatar', avatar, at: 0);
+      final av = rules.kid('Avatar');
+      final at = av == null ? 0 : rules.children.indexOf(av) + 1;
+      _upsertTag(rules, 'Name', name, at: at);
+    });
+  }
+
+  void _upsertTag(XmlElement parent, String tag, String value,
+      {required int at}) {
+    final existing = parent.kid(tag);
+    if (value.isEmpty) {
+      existing?.remove();
+      return;
+    }
+    if (existing != null) {
+      existing.put('Name', value);
+      return;
+    }
+    parent.children.insert(
+      at.clamp(0, parent.children.length),
+      makeEl(tag, {'Name': value}),
+    );
   }
 
   // ---------- ROOT CHILDREN (QUESTS / STAGES) ----------
@@ -333,7 +440,9 @@ class RaidForgeController extends ChangeNotifier {
       counts[n] = (counts[n] ?? 0) + 1;
     }
     counts.forEach((n, c) {
-      if (c > 1) out.add(DiagIssue(false, 'diag.dupQuest', {'name': n, 'count': c}));
+      if (c > 1) {
+        out.add(DiagIssue(false, 'diag.dupQuest', {'name': n, 'count': c}));
+      }
     });
     out.addAll(dojoDiagnostics());
     return out;

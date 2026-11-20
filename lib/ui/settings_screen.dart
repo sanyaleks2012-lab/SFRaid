@@ -17,7 +17,8 @@ class SettingsScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text(tr('settings.language'), style: Theme.of(context).textTheme.titleMedium),
+            Text(tr('settings.language'),
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             SegmentedButton<String>(
               segments: const [
@@ -28,7 +29,8 @@ class SettingsScreen extends StatelessWidget {
               onSelectionChanged: (s) => appState.setLang(s.first),
             ),
             const SizedBox(height: 24),
-            Text(tr('settings.perkMode'), style: Theme.of(context).textTheme.titleMedium),
+            Text(tr('settings.perkMode'),
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             SegmentedButton<PerkMergeMode>(
               segments: [
@@ -57,7 +59,8 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
             const SizedBox(height: 24),
-            Text(tr('settings.folders'), style: Theme.of(context).textTheme.titleMedium),
+            Text(tr('settings.folders'),
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             SelectableText(
               [

@@ -34,6 +34,7 @@ Future<bool> requestAllFilesAccess() async {
 }
 
 /// Создаёт папки SFRaid, распаковывает локализации и пример плагина.
+/// Создаёт папки SFRaid, синхронизирует локализации и пишет пример плагина.
 Future<void> ensureLayout() async {
   for (final d in [
     SfPaths.lua,
@@ -45,24 +46,30 @@ Future<void> ensureLayout() async {
     await Directory(d).create(recursive: true);
   }
   for (final code in supportedLocales) {
-    final f = File('${SfPaths.localisations}/$code.json');
-    if (!await f.exists()) {
-      await f.writeAsString(
-        await rootBundle.loadString('assets/localisations/$code.json'),
-      );
-    }
+    await _syncLocale(code);
   }
   final ex = File('${SfPaths.lua}/examples/hello.lua');
   if (!await ex.exists()) await ex.writeAsString(exampleLua);
 }
 
-/// Перезаписывает файлы локализации из ассетов (кнопка сброса в настройках).
-Future<void> resetLocalisations() async {
-  await Directory(SfPaths.localisations).create(recursive: true);
-  for (final code in supportedLocales) {
-    await File('${SfPaths.localisations}/$code.json').writeAsString(
-      await rootBundle.loadString('assets/localisations/$code.json'),
-    );
+/// Перезаписывает файл на sdcard, если версия в ассетах новее.
+/// Ручные правки в этом файле при повышении _version будут потеряны.
+Future<void> _syncLocale(String code) async {
+  final asset = await rootBundle.loadString('assets/localisations/$code.json');
+  final f = File('${SfPaths.localisations}/$code.json');
+  var fileVersion = -1;
+  if (await f.exists()) {
+    try {
+      final m = jsonDecode(await f.readAsString()) as Map;
+      fileVersion = (m['_version'] as int?) ?? 0;
+    } catch (_) {
+      fileVersion = 0;
+    }
+  }
+  final assetVersion =
+      ((jsonDecode(asset) as Map)['_version'] as int?) ?? 0;
+  if (fileVersion < assetVersion) {
+    await f.writeAsString(asset);
   }
 }
 
@@ -110,3 +117,12 @@ function doublePower()
   sf.log("power doubled")
 end
 ''';
+/// Принудительно перезаписывает файлы на sdcard из ассетов.
+Future<void> resetLocalisations() async {
+  await Directory(SfPaths.localisations).create(recursive: true);
+  for (final code in supportedLocales) {
+    await File('${SfPaths.localisations}/$code.json').writeAsString(
+      await rootBundle.loadString('assets/localisations/$code.json'),
+    );
+  }
+}

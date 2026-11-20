@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/l10n.dart';
 import '../core/raid_controller.dart';
-import '../core/xml_utils.dart';
 import '../lua/plugin_host.dart';
+import '../core/xml_utils.dart';
 
 void snack(BuildContext context, String msg) {
   ScaffoldMessenger.of(context)
@@ -13,6 +13,20 @@ void snack(BuildContext context, String msg) {
       behavior: SnackBarBehavior.floating,
     ));
 }
+
+void goTo(BuildContext context, Widget w) =>
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => w));
+
+Widget emptyNote(String text) => Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.grey),
+        ),
+      ),
+    );
 
 Future<bool> confirmDialog(BuildContext context, String message) async {
   final r = await showDialog<bool>(
@@ -34,80 +48,6 @@ Future<bool> confirmDialog(BuildContext context, String message) async {
   return r ?? false;
 }
 
-class SectionCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final List<Widget> children;
-  final VoidCallback? onEdit;
-  final Widget? action;
-
-  const SectionCard({
-    super.key,
-    required this.title,
-    required this.icon,
-    required this.children,
-    this.onEdit,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            color: cs.secondaryContainer.withValues(alpha: 0.25),
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-            child: Row(
-              children: [
-                Icon(icon, size: 20, color: cs.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(title,
-                      style: Theme.of(context).textTheme.titleMedium),
-                ),
-                if (action != null) action!,
-                if (onEdit != null)
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: onEdit,
-                  ),
-              ],
-            ),
-          ),
-          ...children,
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-}
-
-class InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const InfoRow(this.label, this.value, {super.key});
-
-  @override
-  Widget build(BuildContext context) => ListTile(
-        dense: true,
-        title: Text(label),
-        trailing: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 200),
-          child: Text(
-            value,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: TextStyle(color: Theme.of(context).colorScheme.primary),
-          ),
-        ),
-      );
-}
-
 class FieldSpec {
   final String key;
   final String label;
@@ -116,33 +56,30 @@ class FieldSpec {
   const FieldSpec(this.key, this.label, this.value, {this.numeric = false});
 }
 
-/// Нижний лист с полями. Возвращает значения по key или null при отмене.
+/// Диалог с полями (AlertDialog). Возвращает значения по key или null при отмене.
 Future<Map<String, String>?> showFieldsSheet(
   BuildContext context,
   String title,
   List<FieldSpec> fields, {
   String? hint,
 }) {
-  return showModalBottomSheet<Map<String, String>>(
+  return showDialog<Map<String, String>>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    useSafeArea: true,
-    builder: (_) => _FieldsSheet(title: title, fields: fields, hint: hint),
+    builder: (_) => _FormDialog(title: title, fields: fields, hint: hint),
   );
 }
 
-class _FieldsSheet extends StatefulWidget {
+class _FormDialog extends StatefulWidget {
   final String title;
   final List<FieldSpec> fields;
   final String? hint;
-  const _FieldsSheet({required this.title, required this.fields, this.hint});
+  const _FormDialog({required this.title, required this.fields, this.hint});
 
   @override
-  State<_FieldsSheet> createState() => _FieldsSheetState();
+  State<_FormDialog> createState() => _FormDialogState();
 }
 
-class _FieldsSheetState extends State<_FieldsSheet> {
+class _FormDialogState extends State<_FormDialog> {
   late final Map<String, TextEditingController> _c = {
     for (final f in widget.fields) f.key: TextEditingController(text: f.value),
   };
@@ -155,7 +92,7 @@ class _FieldsSheetState extends State<_FieldsSheet> {
     super.dispose();
   }
 
-  void _submit() {
+  void _ok() {
     Navigator.pop(context, {
       for (final f in widget.fields) f.key: _c[f.key]!.text.trim(),
     });
@@ -163,57 +100,67 @@ class _FieldsSheetState extends State<_FieldsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
-          if (widget.hint != null) ...[
-            const SizedBox(height: 6),
-            Text(widget.hint!,
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-          const SizedBox(height: 12),
-          for (final f in widget.fields)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: TextField(
-                controller: _c[f.key],
-                keyboardType: f.numeric
-                    ? const TextInputType.numberWithOptions(decimal: true)
-                    : TextInputType.text,
-                autocorrect: false,
-                decoration: InputDecoration(labelText: f.label),
-                onSubmitted: (_) => _submit(),
-              ),
-            ),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(tr('common.cancel')),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _submit,
-                  child: Text(tr('common.ok')),
-                ),
-              ),
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.hint != null) ...[
+              Text(widget.hint!,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 10),
             ],
-          ),
-        ],
+            for (final f in widget.fields)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _c[f.key],
+                  autocorrect: false,
+                  keyboardType: f.numeric
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  decoration: InputDecoration(labelText: f.label),
+                  onSubmitted: (_) => _ok(),
+                ),
+              ),
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(tr('common.cancel')),
+        ),
+        FilledButton(onPressed: _ok, child: Text(tr('common.ok'))),
+      ],
     );
   }
 }
 
-/// Сохранение с backup, хуком onSave, тактильным откликом и сообщением.
+/// Список выбора (AlertDialog). Возвращает индекс или null.
+Future<int?> pick(BuildContext context, String title, List<String> items) {
+  return showDialog<int>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(title),
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 420,
+        child: ListView.builder(
+          itemCount: items.length,
+          itemBuilder: (_, i) => ListTile(
+            dense: true,
+            title: Text(items[i]),
+            onTap: () => Navigator.pop(c, i),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 Future<void> saveWithFeedback(
     BuildContext context, RaidForgeController ctrl) async {
   if (!ctrl.dirty) {
@@ -224,17 +171,12 @@ Future<void> saveWithFeedback(
     pluginHost.fire('onSave');
     final backup = await ctrl.save();
     HapticFeedback.mediumImpact();
-    if (context.mounted) {
-      snack(context, tr('toast.backup', {'path': backup}));
-    }
+    if (context.mounted) snack(context, tr('toast.backup', {'path': backup}));
   } catch (e) {
-    if (context.mounted) {
-      snack(context, tr('err.saveFailed', {'error': '$e'}));
-    }
+    if (context.mounted) snack(context, tr('err.saveFailed', {'error': '$e'}));
   }
 }
 
-/// Шорткат для обработки RaidForgeException в обработчиках UI.
 void guard(BuildContext context, void Function() action) {
   try {
     action();

@@ -4,37 +4,43 @@ import 'package:flutter/services.dart';
 import 'storage.dart';
 
 class L10n {
-  static Map<String, String> _fallback = {};
-  static Map<String, String> _current = {};
+  static Map<String, String> _base = {};
+  static Map<String, String> _active = {};
 
-  /// Читает язык с sdcard, при отсутствии — из ассетов. Недостающие ключи — из английского.
+  /// Порядок: встроенный en (полный набор) → встроенный выбранный язык →
+  /// файл на sdcard (может быть неполным). Недостающее берётся из встроенного en.
   static Future<void> load(String code) async {
-    _fallback = await _read('en');
-    _current = code == 'en' ? _fallback : await _read(code);
+    _base = await _bundled('en');
+    final bundled = code == 'en' ? _base : await _bundled(code);
+    final external = await _external(code);
+    _active = {...bundled, ...external};
   }
 
-  static Future<Map<String, String>> _read(String code) async {
+  static Future<Map<String, String>> _bundled(String code) async {
     try {
-      final f = File('${SfPaths.localisations}/$code.json');
-      final raw = await f.exists()
-          ? await f.readAsString()
-          : await rootBundle.loadString('assets/localisations/$code.json');
-      return (jsonDecode(raw) as Map)
-          .map((k, v) => MapEntry('$k', '$v'));
+      return _decode(
+        await rootBundle.loadString('assets/localisations/$code.json'),
+      );
     } catch (_) {
-      try {
-        final raw =
-            await rootBundle.loadString('assets/localisations/$code.json');
-        return (jsonDecode(raw) as Map)
-            .map((k, v) => MapEntry('$k', '$v'));
-      } catch (_) {
-        return {};
-      }
+      return {};
     }
   }
 
+  static Future<Map<String, String>> _external(String code) async {
+    try {
+      final f = File('${SfPaths.localisations}/$code.json');
+      if (!await f.exists()) return {};
+      return _decode(await f.readAsString());
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Map<String, String> _decode(String raw) =>
+      (jsonDecode(raw) as Map).map((k, v) => MapEntry('$k', '$v'));
+
   static String t(String key, [Map<String, Object?> args = const {}]) {
-    var s = _current[key] ?? _fallback[key] ?? key;
+    var s = _active[key] ?? _base[key] ?? key;
     args.forEach((k, v) => s = s.replaceAll('{$k}', '$v'));
     return s;
   }
