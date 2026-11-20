@@ -1,0 +1,124 @@
+Analyzing raid_forge...                                         
+
+  error • Target of URI doesn't exist: 'widgets.dart' • lib/core/dojo.dart:6:8 • uri_does_not_exist
+  error • The method 'snack' isn't defined for the type 'EditorBar' • lib/core/dojo.dart:67:33 • undefined_method
+  error • The method 'saveWithFeedback' isn't defined for the type 'EditorBar' • lib/core/dojo.dart:73:30 • undefined_method
+  error • The method 'dojos' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:105:28 • undefined_method
+  error • The method 'confirmDialog' isn't defined for the type 'QuestsHomeScreen' • lib/core/dojo.dart:113:23 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'DojoChangerScreen' • lib/core/dojo.dart:186:21 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'DojoChangerScreen' • lib/core/dojo.dart:190:9 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'DojoChangerScreen' • lib/core/dojo.dart:191:9 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'DojoChangerScreen' • lib/core/dojo.dart:192:9 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'DojoChangerScreen' • lib/core/dojo.dart:193:9 • undefined_method
+  error • The method 'guard' isn't defined for the type 'DojoChangerScreen' • lib/core/dojo.dart:198:5 • undefined_method
+  error • The method 'addDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:200:18 • undefined_method
+  error • The method 'dojos' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:214:27 • undefined_method
+  error • The name 'DojoEntry' isn't a type, so it can't be used as a type argument • lib/core/dojo.dart:241:43 • non_type_as_type_argument
+  error • The method 'moveDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:274:36 • undefined_method
+  error • The method 'moveDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:282:36 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'DojoEditScreen' • lib/core/dojo.dart:305:21 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'DojoEditScreen' • lib/core/dojo.dart:308:8 • undefined_method
+  error • The method 'guard' isn't defined for the type 'DojoEditScreen' • lib/core/dojo.dart:311:5 • undefined_method
+  error • The method 'dojos' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:319:26 • undefined_method
+  error • The method 'editDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:343:33 • undefined_method
+  error • The method 'editDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:350:33 • undefined_method
+  error • The method 'editDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:357:33 • undefined_method
+  error • The method 'confirmDialog' isn't defined for the type 'DojoEditScreen' • lib/core/dojo.dart:406:32 • undefined_method
+  error • The method 'guard' isn't defined for the type 'DojoEditScreen' • lib/core/dojo.dart:411:21 • undefined_method
+  error • The method 'deleteDojo' isn't defined for the type 'RaidForgeController' • lib/core/dojo.dart:412:28 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:442:21 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:446:9 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:447:9 • undefined_method
+  error • The method 'snack' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:453:7 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:522:45 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:526:33 • undefined_method
+  error • The method 'guard' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:531:31 • undefined_method
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/core/dojo.dart:531:37 • use_build_context_synchronously
+  error • The method 'confirmDialog' isn't defined for the type '_QuestListScreenState' • lib/core/dojo.dart:535:46 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:598:37 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:599:26 • undefined_method
+  error • The method 'snack' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:602:23 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:613:37 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:616:24 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:667:37 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:670:24 • undefined_method
+  error • The method 'guard' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:673:21 • undefined_method
+  error • The method 'snack' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:674:21 • undefined_method
+  error • The method 'confirmDialog' isn't defined for the type 'QuestScreen' • lib/core/dojo.dart:681:30 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'AttrsScreen' • lib/core/dojo.dart:721:31 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'AttrsScreen' • lib/core/dojo.dart:722:17 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'AttrsScreen' • lib/core/dojo.dart:723:17 • undefined_method
+  error • The method 'showFieldsSheet' isn't defined for the type 'AttrsScreen' • lib/core/dojo.dart:739:43 • undefined_method
+  error • The method 'FieldSpec' isn't defined for the type 'AttrsScreen' • lib/core/dojo.dart:740:32 • undefined_method
+  error • The method 'guard' isn't defined for the type '_XmlScreenState' • lib/core/dojo.dart:787:5 • undefined_method
+  error • Target of URI doesn't exist: 'shizuku_bridge.dart' • lib/core/perk_source.dart:2:8 • uri_does_not_exist
+  error • Undefined class 'RaidIo' • lib/core/perk_source.dart:45:12 • undefined_class
+  error • Undefined class 'RaidIo' • lib/core/perk_source.dart:63:31 • undefined_class
+  error • Target of URI doesn't exist: 'shizuku_bridge.dart' • lib/core/raid_controller.dart:4:8 • uri_does_not_exist
+  error • The included part 'package:raid_forge/core/dojo.dart' must have a part-of directive • lib/core/raid_controller.dart:8:6 • part_of_non_part
+  error • Undefined class 'RaidIo' • lib/core/raid_controller.dart:29:9 • undefined_class
+  error • The method 'dojoDiagnostics' isn't defined for the type 'RaidForgeController' • lib/core/raid_controller.dart:338:16 • undefined_method
+  error • The method 'read' isn't defined for the type 'ShizukuBridge' • lib/io/raid_io.dart:44:53 • undefined_method
+  error • The method 'write' isn't defined for the type 'ShizukuBridge' • lib/io/raid_io.dart:48:21 • undefined_method
+   info • The type of the right operand ('int') isn't a subtype or a supertype of the left operand ('bool') • lib/lua/plugin_host.dart:53:20 • unrelated_type_equality_checks
+  error • The method 'pcall' isn't defined for the type 'LuaState' • lib/lua/plugin_host.dart:72:23 • undefined_method
+  error • The method 'pcall' isn't defined for the type 'LuaState' • lib/lua/plugin_host.dart:85:23 • undefined_method
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:127:35 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:128:32 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:133:35 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:134:40 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:134:58 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:139:35 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:141:32 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:146:35 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:148:40 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:148:58 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:153:35 • argument_type_not_assignable
+  error • A value of type 'String?' can't be assigned to a variable of type 'String' • lib/lua/plugin_host.dart:167:47 • invalid_assignment
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:172:38 • argument_type_not_assignable
+  error • The argument type 'String?' can't be assigned to the parameter type 'String'.  • lib/lua/plugin_host.dart:172:56 • argument_type_not_assignable
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:111:49 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:134:49 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:151:52 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:164:51 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:173:50 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:182:50 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:182:64 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/boss_screen.dart:192:47 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/home_screen.dart:178:9 • undefined_class
+  error • Undefined class 'XmlElement' • lib/ui/home_screen.dart:179:9 • undefined_class
+  error • The method 'dojos' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:105:28 • undefined_method
+  error • The method 'addDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:200:18 • undefined_method
+  error • The method 'dojos' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:214:27 • undefined_method
+  error • The name 'DojoEntry' isn't a type, so it can't be used as a type argument • lib/ui/quests_screens.dart:241:43 • non_type_as_type_argument
+  error • The method 'moveDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:274:36 • undefined_method
+  error • The method 'moveDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:282:36 • undefined_method
+  error • The method 'dojos' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:319:26 • undefined_method
+  error • The method 'editDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:343:33 • undefined_method
+  error • The method 'editDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:350:33 • undefined_method
+  error • The method 'editDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:357:33 • undefined_method
+  error • The method 'deleteDojo' isn't defined for the type 'RaidForgeController' • lib/ui/quests_screens.dart:412:28 • undefined_method
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/ui/quests_screens.dart:531:37 • use_build_context_synchronously
+  error • Target of URI doesn't exist: '../core/shizuku_bridge.dart' • lib/ui/start_screen.dart:10:8 • uri_does_not_exist
+  error • Undefined class 'ShizukuState' • lib/ui/start_screen.dart:31:3 • undefined_class
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:31:23 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:58:9 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:59:9 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:60:9 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:61:9 • undefined_identifier
+  error • Undefined name 'ShizukuBridge' • lib/ui/start_screen.dart:66:23 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:73:17 • undefined_identifier
+  error • Undefined name 'ShizukuBridge' • lib/ui/start_screen.dart:74:13 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:77:17 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:78:20 • undefined_identifier
+  error • Undefined name 'ShizukuBridge' • lib/ui/start_screen.dart:89:25 • undefined_identifier
+  error • Undefined class 'RaidIo' • lib/ui/start_screen.dart:131:13 • undefined_class
+  error • The method 'ShizukuIo' isn't defined for the type '_StartScreenState' • lib/ui/start_screen.dart:139:14 • undefined_method
+  error • The method 'DirectIo' isn't defined for the type '_StartScreenState' • lib/ui/start_screen.dart:148:14 • undefined_method
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:262:31 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:265:38 • undefined_identifier
+  error • Undefined name 'ShizukuState' • lib/ui/start_screen.dart:275:31 • undefined_identifier
+  error • The named parameter 'initialValue' isn't defined • lib/ui/start_screen.dart:312:27 • undefined_named_parameter
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/widgets.dart:63:42 • deprecated_member_use
+  error • The name 'MyApp' isn't a class • test/widget_test.dart:16:35 • creation_with_non_type
+
