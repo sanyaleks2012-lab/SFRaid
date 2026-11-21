@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:xml/xml.dart';
 
 import '../../core/session.dart';
+import '../../core/xml_helpers.dart';
 import '../boss/boss_screen.dart';
 import '../common/dialogs.dart';
 import '../common/feedback.dart';

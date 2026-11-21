@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:xml/xml.dart';
 
 import '../../core/session.dart';
+import '../../core/xml_helpers.dart';
 import '../common/dialogs.dart';
 import '../common/navigation.dart';
 import '../common/widgets.dart';

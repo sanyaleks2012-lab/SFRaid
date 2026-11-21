@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:xml/xml.dart';
 
-import '../../core/session.dart';
 import '../../core/config.dart';
+import '../../core/session.dart';
+import '../../core/xml_helpers.dart';
 import '../boss/attrs_screen.dart';
 import '../common/dialogs.dart';
 import '../common/navigation.dart';

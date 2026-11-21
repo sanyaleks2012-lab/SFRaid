@@ -1,5 +1,4 @@
 import '../core/raid_io.dart';
-
 import 'shizuku_bridge.dart';
 
 /// Доступ через Shizuku (shell-uid) — работает в Android/data.
